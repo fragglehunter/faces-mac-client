@@ -1,0 +1,132 @@
+/* buoyant.css — Buoyant animated landscape scene.
+ *
+ * Shared chrome (full-bleed shell, floating toolbar, Classic-chrome hiding,
+ * rate control, user pill) is in skin.css under body.visual-fun.
+ * This file only adds Buoyant-specific things.
+ *
+ * SPDX-License-Identifier: Apache-2.0 */
+
+/* ── Mode selector pill (shared across all fun modes via .mode-control) ─── */
+/* Base styles now in skin.css; only Buoyant-specific overrides here. */
+
+/* ── Scene root ─────────────────────────────────────────────────────────── */
+
+.buoyant-root {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    background: #8fd9ff;   /* sky-blue fallback while blue-sky.png loads */
+}
+
+body.visual-buoyant .buoyant-root {
+    display: block;
+}
+
+#buoyant-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+}
+
+/* ── Buoyant HUD (top-right counts pill) ─────────────────────────────────── */
+
+.buoyant-hud {
+    position: absolute;
+    right: 14px;
+    top: 14px;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+    pointer-events: none;
+    font: 16px -apple-system, BlinkMacSystemFont, sans-serif;
+    color: rgba(24, 45, 70, 0.90);
+}
+
+.buoyant-hud > span {
+    padding: 7px 13px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.70);
+    border: 1px solid rgba(255, 255, 255, 0.78);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    font-weight: 600;
+}
+
+/* ── Buoyant key popup ───────────────────────────────────────────────────── */
+
+.buoyant-key-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(15, 30, 50, 0.45);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+}
+
+.buoyant-key-overlay.open {
+    display: flex;
+}
+
+.buoyant-key-card {
+    width: min(680px, calc(100vw - 60px));
+    max-height: min(80vh, 780px);
+    overflow-y: auto;
+    background: var(--card-bg, rgba(255, 255, 255, 0.97));
+    color: var(--text, #1b2a3a);
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    border-radius: 16px;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
+    padding: 18px 22px 22px;
+    font: 13px -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.buoyant-key-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.buoyant-key-header h2 { margin: 0; font-size: 16px; }
+
+.buoyant-key-close {
+    border: 0;
+    background: transparent;
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+    color: var(--text-dim, #667);
+    padding: 2px 6px;
+}
+
+.bk-intro {
+    margin: 6px 0 12px;
+    color: var(--text-dim, #566);
+    line-height: 1.45;
+}
+
+.bk-row {
+    display: grid;
+    grid-template-columns: 40px 1fr;
+    gap: 10px;
+    padding: 9px 10px;
+    border-radius: 10px;
+    line-height: 1.4;
+}
+
+.bk-row.bk-star {
+    background: rgba(238, 102, 119, 0.12);
+    border: 1px solid rgba(238, 102, 119, 0.35);
+}
+
+.bk-icon  { font-size: 24px; line-height: 1.25; text-align: center; }
+.bk-title { font-weight: 700; }
+.bk-desc  { opacity: 0.92; }
+.bk-how   { margin-top: 3px; color: var(--text-dim, #567); }
+.bk-how b { color: var(--text, #234); font-weight: 600; }

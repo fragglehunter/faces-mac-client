@@ -1,0 +1,31 @@
+/* theme.css — sizing for image-based emoji themes (theme.js).
+ * Not part of the original faces-demo. Emoji <img>s scale with the surrounding
+ * font-size so they drop in exactly where the native glyph would render.
+ * SPDX-License-Identifier: Apache-2.0 */
+
+img.emoji-img {
+    width: 1em;
+    height: 1em;
+    margin: 0;
+    padding: 0;
+    vertical-align: middle;
+    display: inline-block;
+    object-fit: contain;
+    /* keep them crisp and non-interactive */
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
+.cell-smiley img.emoji-img {
+    display: block;
+    width: 0.92em;
+    height: 0.92em;
+    margin: 0.04em auto 0;
+}
+
+.key-cell img.emoji-img {
+    display: block;
+    width: 0.86em;
+    height: 0.86em;
+    margin: 0.07em auto 0;
+}

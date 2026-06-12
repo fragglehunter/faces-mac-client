@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Faces Debug</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  font-size: 13px;
+  background: #1c1c1e;
+  color: #e5e5ea;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Header ─────────────────────────────────────────────────────────── */
+.dw-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: #2c2c2e;
+  border-bottom: 1px solid #3a3a3c;
+  flex-shrink: 0;
+}
+.dw-header strong { font-size: 14px; }
+.dw-header small  { color: #8e8e93; font-size: 11px; margin-left: 8px; }
+.dw-header button {
+  background: #3a3a3c;
+  border: 1px solid #4a4a4c;
+  border-radius: 6px;
+  color: #e5e5ea;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 10px;
+}
+.dw-header button:hover { background: #4a4a4c; }
+
+/* ── Overview bar ───────────────────────────────────────────────────── */
+.dw-overview {
+  display: flex;
+  gap: 10px;
+  padding: 10px 16px;
+  background: #252527;
+  border-bottom: 1px solid #3a3a3c;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.dw-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 70px;
+  padding: 6px 10px;
+  background: #2c2c2e;
+  border: 1px solid #3a3a3c;
+  border-radius: 8px;
+}
+.dw-stat-val   { font-weight: 600; font-size: 15px; }
+.dw-stat-label { font-size: 10px; color: #8e8e93; margin-top: 2px; }
+.dw-ok  { color: #30d158; }
+.dw-err { color: #ff453a; }
+.dw-lat { color: #ffd60a; }
+.dw-rps { color: #0a84ff; }
+
+/* ── Toolbar ────────────────────────────────────────────────────────── */
+.dw-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: #1c1c1e;
+  border-bottom: 1px solid #2c2c2e;
+  flex-shrink: 0;
+}
+.dw-toolbar label {
+  font-size: 12px;
+  color: #8e8e93;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.dw-toolbar input[type="text"] {
+  background: #2c2c2e;
+  border: 1px solid #3a3a3c;
+  border-radius: 6px;
+  color: #e5e5ea;
+  font-size: 12px;
+  padding: 3px 8px;
+  width: 60px;
+}
+.dw-auto-badge {
+  font-size: 11px;
+  color: #30d158;
+  background: rgba(48, 209, 88, 0.12);
+  border: 1px solid rgba(48,209,88,0.25);
+  border-radius: 10px;
+  padding: 2px 7px;
+}
+
+/* ── Split body ──────────────────────────────────────────────────────── */
+.dw-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Request table ───────────────────────────────────────────────────── */
+.dw-table-wrap {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+thead th {
+  position: sticky;
+  top: 0;
+  background: #2c2c2e;
+  padding: 6px 10px;
+  text-align: left;
+  font-weight: 600;
+  color: #8e8e93;
+  border-bottom: 1px solid #3a3a3c;
+  white-space: nowrap;
+}
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: #2c2c2e; }
+tbody tr.sel  { background: #3a3a3c; }
+tbody td {
+  padding: 4px 10px;
+  border-bottom: 1px solid #222224;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+.ok  { color: #30d158; }
+.bad { color: #ff453a; }
+.warn { color: #ffd60a; }
+
+/* ── Detail panel ────────────────────────────────────────────────────── */
+.dw-detail {
+  width: 310px;
+  flex-shrink: 0;
+  border-left: 1px solid #3a3a3c;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.dw-detail pre {
+  flex: 1;
+  overflow: auto;
+  padding: 12px;
+  font-size: 11px;
+  font-family: "SF Mono", Menlo, monospace;
+  color: #d4d4d8;
+  background: #111113;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+</style>
+</head>
+<body>
+<div class="dw-header">
+  <div>
+    <strong>Faces Debug</strong>
+    <small id="dw-summary">loading…</small>
+  </div>
+  <button id="dw-refresh">&#x21BB; Refresh</button>
+</div>
+<div class="dw-overview" id="dw-overview"></div>
+<div class="dw-toolbar">
+  <label>
+    Max rows
+    <input type="text" id="dw-limit" value="300">
+  </label>
+  <span class="dw-auto-badge">Auto-refresh 1.5s</span>
+</div>
+<div class="dw-body">
+  <div class="dw-table-wrap">
+    <table>
+      <thead><tr>
+        <th>#</th><th>Cell</th><th>Type</th><th>Status</th>
+        <th>ms</th><th>Pod</th><th>Time</th>
+      </tr></thead>
+      <tbody id="dw-tbody"></tbody>
+    </table>
+  </div>
+  <div class="dw-detail">
+    <pre id="dw-detail">Select a row for details.</pre>
+  </div>
+</div>
+
+<script>
+// debug-window.html — pop-out panel loaded by DebugWindowController (NSPanel).
+// Swift calls window.__refresh__(jsonString) on a 1.5s timer.
+// Falls back to self-updating via webkit.messageHandlers.getDebugEntries if available.
+
+var entries = [];
+var selected = null;
+var limitEl  = document.getElementById("dw-limit");
+var summaryEl = document.getElementById("dw-summary");
+var overviewEl = document.getElementById("dw-overview");
+var tbody    = document.getElementById("dw-tbody");
+var detailEl = document.getElementById("dw-detail");
+
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;");
+}
+
+function render() {
+  var limit = Math.min(1000, Math.max(1, parseInt(limitEl.value) || 300));
+  var list  = entries.slice(-limit).reverse();
+
+  // Summary
+  summaryEl.textContent = entries.length + " total · showing " + list.length;
+
+  // Overview stats
+  var ok   = list.filter(function(e){ return e.status >= 200 && e.status < 300; });
+  var err  = list.filter(function(e){ return e.status >= 400 || e.status === 0; });
+  var sumLat = 0; list.forEach(function(e){ sumLat += (e.latencyMs||0); });
+  var avgLat = list.length ? Math.round(sumLat/list.length) : 0;
+  var now10  = Date.now() - 10000;
+  var recent = entries.filter(function(e){ return e.ts > now10; }).length;
+  var rps    = (recent/10).toFixed(1);
+  var pods   = new Set(); list.forEach(function(e){ if(e.pod) pods.add(e.pod); });
+
+  overviewEl.innerHTML =
+    stat(list.length, "", "requests") +
+    stat(ok.length + " (" + (list.length ? Math.round(ok.length*100/list.length) : 0) + "%)", "ok", "2xx ok") +
+    stat(err.length, "err", "errors") +
+    stat(avgLat + "ms", "lat", "avg lat") +
+    stat(rps + "/s", "rps", "req/s") +
+    stat(pods.size, "", "pods");
+
+  // Table
+  var frag = document.createDocumentFragment();
+  list.forEach(function(e) {
+    var tr = document.createElement("tr");
+    if (selected && e.id === selected) tr.className = "sel";
+    tr.dataset.id = e.id;
+    var isOk = e.status >= 200 && e.status < 300;
+    var cls  = isOk ? "ok" : (e.status >= 400 || e.status === 0) ? "bad" : "warn";
+    var ts   = e.ts ? new Date(e.ts).toLocaleTimeString() : "";
+    tr.innerHTML =
+      "<td>" + e.id + "</td>" +
+      "<td>" + (e.row != null ? e.row + "," + e.col : "–") + "</td>" +
+      "<td>" + esc(e.which || "") + "</td>" +
+      '<td class="' + cls + '">' + e.status + "</td>" +
+      "<td>" + (e.latencyMs || 0) + "</td>" +
+      "<td>" + esc(e.pod || "") + "</td>" +
+      "<td>" + esc(ts) + "</td>";
+    frag.appendChild(tr);
+  });
+  tbody.innerHTML = "";
+  tbody.appendChild(frag);
+}
+
+function stat(val, cls, label) {
+  return '<div class="dw-stat">' +
+    '<span class="dw-stat-val' + (cls ? ' dw-' + cls : '') + '">' + val + '</span>' +
+    '<span class="dw-stat-label">' + label + '</span>' +
+    '</div>';
+}
+
+function showDetail(id) {
+  selected = id;
+  var e = entries.find(function(x){ return x.id === id; });
+  if (!e) { detailEl.textContent = "Not found."; return; }
+  var body = e.body;
+  try { body = JSON.parse(e.body); } catch(_) {}
+  detailEl.textContent = JSON.stringify({
+    id: e.id,
+    time: e.ts ? new Date(e.ts).toISOString() : null,
+    mode: e.mode,
+    url:  e.url,
+    cell: { row: e.row, col: e.col, type: e.which },
+    requestHeaders: e.requestHeaders || {},
+    status: e.status,
+    latencyMs: e.latencyMs,
+    pod: e.pod,
+    error: e.error,
+    body: body,
+  }, null, 2);
+  // Highlight the selected row without full re-render
+  document.querySelectorAll("tr.sel").forEach(function(r){ r.classList.remove("sel"); });
+  var tr = tbody.querySelector('tr[data-id="' + id + '"]');
+  if (tr) tr.classList.add("sel");
+}
+
+tbody.addEventListener("click", function(e) {
+  var tr = e.target.closest && e.target.closest("tr[data-id]");
+  if (tr) showDetail(Number(tr.dataset.id));
+});
+
+document.getElementById("dw-refresh").addEventListener("click", refresh);
+
+// Swift calls this with serialized JSON string of all entries.
+window.__refresh__ = function(jsonStr) {
+  try { entries = JSON.parse(jsonStr) || []; } catch(_) { return; }
+  render();
+};
+
+function refresh() {
+  var mh = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.getDebugEntries;
+  if (mh) {
+    mh.postMessage({}).then(function(json) {
+      try { entries = JSON.parse(json) || []; } catch(_) {}
+      render();
+    }).catch(function(){});
+  }
+}
+
+// Initial render (entries may be empty; Swift will push data shortly).
+render();
+</script>
+</body>
+</html>

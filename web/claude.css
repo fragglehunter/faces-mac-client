@@ -1,0 +1,89 @@
+/* SYNAPSE — Claude Mode full-bleed shell */
+
+#claude-root {
+  position: fixed; inset: 0; z-index: 0;
+  background: #050810;
+  display: none;
+  overflow: hidden;
+}
+body.visual-claude #claude-root { display: block; }
+body.visual-claude #claude-root canvas { display: block; width: 100%; height: 100%; }
+
+/* HUD — top right */
+.claude-hud {
+  position: absolute; top: 14px; right: 14px;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+  pointer-events: none;
+}
+.claude-hud-pill {
+  background: rgba(8,12,32,0.88);
+  border: 1px solid rgba(100,140,255,0.28);
+  border-radius: 999px;
+  padding: 4px 12px;
+  color: #A0B8FF;
+  font: 500 12px -apple-system, sans-serif;
+  backdrop-filter: blur(10px);
+  pointer-events: auto;
+}
+
+/* Key popup overlay — must be direct body child (transformed .wrapper is a containing block) */
+.claude-key-overlay {
+  position: fixed; inset: 0; z-index: 30;
+  display: none;
+  align-items: center; justify-content: center;
+  background: rgba(0,0,10,0.65);
+  backdrop-filter: blur(8px);
+}
+.claude-key-card {
+  background: rgba(8,10,28,0.97);
+  border: 1px solid rgba(100,140,255,0.3);
+  border-radius: 16px;
+  padding: 20px 24px;
+  max-width: 560px; width: 90%;
+  max-height: 82vh;
+  overflow-y: auto;
+  color: #C0D0FF;
+  font: 13px -apple-system, sans-serif;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.7);
+}
+.claude-key-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px;
+}
+.claude-key-header h2 {
+  margin: 0; font-size: 16px; color: #A0B8FF;
+}
+.claude-key-close {
+  background: none; border: none; color: #6080CC;
+  font-size: 20px; cursor: pointer; line-height: 1;
+  padding: 0 4px;
+}
+.claude-key-close:hover { color: #A0B8FF; }
+.claude-key-intro {
+  margin: 0 0 12px; color: #8090B8; font-size: 12px; line-height: 1.45;
+}
+.claude-key-table {
+  width: 100%; border-collapse: collapse;
+}
+.claude-key-table td {
+  padding: 5px 8px;
+  vertical-align: top;
+  border-bottom: 1px solid rgba(100,140,255,0.08);
+  font-size: 12.5px;
+}
+.claude-key-table td:first-child {
+  font-size: 18px; text-align: center; padding-right: 4px; width: 28px;
+}
+.claude-key-table td:nth-child(2) { width: 160px; }
+.claude-key-table tr.bk-star td {
+  background: rgba(130,100,255,0.08);
+  border-color: rgba(140,100,255,0.28);
+}
+
+/* Rate control in buoyant toolbar — visible in claude mode */
+body.visual-claude .rate-control { display: inline-flex; }
+
+/* Hide classic-only toolbar elements in claude mode */
+body.visual-claude #btnCounters  { display: none !important; }
+body.visual-claude #btnShowPods  { display: none !important; }
+body.visual-claude #btnShowKey   { display: inline-block !important; }

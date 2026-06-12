@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<HTML>
+
+<HEAD>
+  <!--
+	SPDX-FileCopyrightText: 2022 Buoyant Inc.
+	SPDX-License-Identifier: Apache-2.0
+
+	Copyright 2022 Buoyant Inc.
+
+	Licensed under the Apache License, Version 2.0 (the "License"); you may
+	not use this file except in compliance with the License.  You may obtain
+	a copy of the License at
+
+	     http:#www.apache.org/licenses/LICENSE-2.0
+
+	Unless required by applicable law or agreed to in writing, software
+	distributed under the License is distributed on an "AS IS" BASIS,
+	WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+	See the License for the specific language governing permissions and
+	limitations under the License.
+
+	NOTE (faces-gui-mac-app): This file is a near-verbatim copy of
+	faces-demo's assets/html/index.html. The only changes are:
+	  1. The Go server's %%{...} template placeholders in the faces-config
+	     block are replaced with safe static defaults; sim.js overwrites the
+	     block at runtime with the live settings from the native app.
+	  2. sim.js is loaded BEFORE faces.js to install the self-contained
+	     face/smiley/color backend simulator (fake XMLHttpRequest). -->
+
+  <!-- charset is required: buoyant.js/toolbar.js contain UTF-8 emoji literals,
+       and without it WebKit/Chrome fall back to Latin-1 (mojibake). -->
+  <meta charset="utf-8">
+
+  <Title>Faces</Title>
+
+  <link rel="stylesheet" href="faces.css">
+  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="buoyant.css?v=27">
+  <link rel="stylesheet" href="cavern.css?v=27">
+  <link rel="stylesheet" href="space.css?v=27">
+  <link rel="stylesheet" href="garden.css?v=27">
+  <link rel="stylesheet" href="claude.css?v=27">
+  <!-- skin.css restyles the chrome (card/toolbar/buttons) to feel macOS-native
+       and defines the selectable appearances; loaded last so it can override. -->
+  <link rel="stylesheet" href="skin.css?v=29">
+  <!-- stats.css — unified HUD pills for all fun modes -->
+  <link rel="stylesheet" href="stats.css?v=27">
+</HEAD>
+
+<!-- The appearance class is set live from Settings by sim.js (skin-system default). -->
+<BODY class="skin-system">
+  <div class="wrapper">
+    <H1 style="text-align: center;">Faces</H1>
+
+    <div id="toolbar" class="toolbar">
+      <input id="btnToggle" type="button" value="Init..." class="roundedButton" />
+      <input id="btnCounters" type="button" value="Init..." class="roundedButton" />
+      <input id="btnShowPods" type="button" value="Init..." class="roundedButton" />
+      <input id="btnShowKey" type="button" value="Show Key" class="roundedButton" style="display: none;" />
+      <label id="modeControl" class="mode-control">
+        <span>Mode</span>
+        <select id="visualMode">
+          <option value="legacy">Legacy</option>
+          <option value="classic">Modern</option>
+          <option value="buoyant">Buoyant</option>
+          <option value="space">Space</option>
+          <option value="cavern">Cavern</option>
+          <option value="garden">Garden</option>
+          <option value="claude">Claude &#x2736;</option>
+        </select>
+      </label>
+      <div id="userDiv" class="inline">
+        User: <input id="userName" contenteditable="true" placeholder="unknown">
+      </div>
+      <div id="timer" class="inline"></div>
+    </div>
+
+    <div id="keyPopup" class="key-popup-overlay" style="display: none;">
+      <div class="key-popup-content">
+        <div class="key-popup-header">
+          <h2>Legend</h2>
+          <button id="btnCloseKey" class="key-popup-close">&times;</button>
+        </div>
+        <div id="keyPopupBody" class="key-popup-body"></div>
+      </div>
+    </div>
+
+    <div id="main">
+      <div id="column1" class="inline-block float-left">
+        <div id="cells" class="vert-margins"></div>
+      </div>
+
+      <div id="column2" class="inline-block float-left pod-stats">
+        <div id="pods" class="vert-margins"></div>
+      </div>
+
+      <div id="column3" class="inline-block margins">
+        <div id="key" class="vert-margins margin-left"></div>
+      </div>
+    </div>
+
+    <div id="xhr"></div>
+
+    <!-- <div id="log" class="log"><div> -->
+  </div>
+
+  <!-- Scene layers. Both must be DIRECT children of <body>: position:fixed
+       full-bleed, and any transformed ancestor (the floating .wrapper uses
+       translateX) would become the containing block and shrink them. -->
+  <div id="buoyant-root" class="buoyant-root" aria-label="Buoyant Faces scene">
+    <canvas id="buoyant-canvas"></canvas>
+    <div class="buoyant-hud">
+      <span id="buoyant-mode-label">Buoyant</span>
+      <span id="buoyant-counts">0 active</span>
+    </div>
+  </div>
+
+  <div id="cavern-root" class="cavern-root" aria-label="Cavern Faces scene">
+    <canvas id="cavern-canvas"></canvas>
+    <div class="cavern-hud">
+      <span id="cavern-mode-label">Cavern</span>
+      <span id="cavern-counts">0 explorers</span>
+    </div>
+  </div>
+
+  <div id="space-root" class="space-root" aria-label="Space Faces scene">
+    <canvas id="space-canvas"></canvas>
+    <div class="space-hud">
+      <span id="space-mode-label">Space</span>
+      <span id="space-counts">0 missions</span>
+    </div>
+  </div>
+
+  <div id="garden-root" class="garden-root" aria-label="Garden Faces scene">
+    <canvas id="garden-canvas"></canvas>
+    <div class="garden-hud">
+      <span id="garden-mode-label">Garden</span>
+      <span id="garden-counts">0 growing</span>
+    </div>
+  </div>
+
+  <!-- claude-root: direct body child — transformed .wrapper would be the containing block for fixed -->
+  <div id="claude-root" class="claude-root" aria-label="SYNAPSE neural network scene">
+    <canvas id="claude-canvas"></canvas>
+    <div class="claude-hud">
+      <span id="claude-mode-label">SYNAPSE</span>
+      <span id="claude-counts">0 signals</span>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    &copy; <span id="copyright-year"></span> Buoyant Inc.
+  </footer>
+
+  <script id="faces-config" type="application/json">
+  {
+    "user": "unknown",
+    "userAgent": "faces-gui-mac-app",
+    "userHeader": "X-Faces-User",
+    "numRows": 4,
+    "numCols": 4,
+    "edgeSize": 1,
+    "startActive": true,
+    "hideKey": true,
+    "showPods": false,
+    "paintIntervalMs": 2000,
+    "visualMode": "classic",
+    "slowThresholdMs": 900
+  }
+  </script>
+  <script src="sim.js?v=29"></script>
+  <script src="faces.js?v=27"></script>
+  <script src="theme.js?v=27"></script>
+  <script src="layout.js?v=28"></script>
+  <!-- stats.js must load before scene scripts so __FACES_STATS__ is defined -->
+  <script src="stats.js?v=27"></script>
+  <script src="buoyant.js?v=29"></script>
+  <script src="cavern.js?v=27"></script>
+  <script src="space.js?v=27"></script>
+  <script src="garden.js?v=27"></script>
+  <script src="claude.js?v=29"></script>
+  <script src="toolbar.js?v=27"></script>
+  <script src="debug.js?v=27"></script>
+</BODY>
+
+</HTML>

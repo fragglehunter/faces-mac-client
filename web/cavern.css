@@ -1,0 +1,83 @@
+/* cavern.css — Cavern visual mode layout.
+ *
+ * Shared chrome (full-bleed shell, floating toolbar, rate control, etc.) is in
+ * skin.css under body.visual-fun and body.visual-cavern. This file only adds
+ * Cavern-specific elements: the scene root, HUD, key popup, and scoreboard.
+ *
+ * SPDX-License-Identifier: Apache-2.0 */
+
+/* ── Scene root ─────────────────────────────────────────────────────────── */
+
+.cavern-root {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  background: #1c1008;   /* cave-dark fallback */
+}
+
+body.visual-cavern .cavern-root {
+  display: block;
+}
+
+#cavern-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
+/* ── Cavern HUD ─────────────────────────────────────────────────────────── */
+
+.cavern-hud {
+  position: absolute;
+  right: 14px;
+  top: 14px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  pointer-events: none;
+  font: 16px -apple-system, BlinkMacSystemFont, sans-serif;
+  color: rgba(255, 235, 180, 0.92);
+}
+
+.cavern-hud > span {
+  padding: 7px 13px;
+  border-radius: 999px;
+  background: rgba(30, 18, 8, 0.65);
+  border: 1px solid rgba(120, 80, 30, 0.50);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  font-weight: 600;
+}
+
+/* ── Cavern key popup ────────────────────────────────────────────────────── */
+
+.cavern-key-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(30, 16, 5, 0.50);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+.cavern-key-overlay.open { display: flex; }
+
+.cavern-key-card {
+  width: min(680px, calc(100vw - 60px));
+  max-height: min(80vh, 780px);
+  overflow-y: auto;
+  background: var(--card-bg, rgba(255, 252, 245, 0.97));
+  color: var(--text, #2a1f12);
+  border: 1px solid rgba(255, 230, 180, 0.55);
+  border-radius: 16px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+  padding: 18px 22px 22px;
+  font: 13px -apple-system, BlinkMacSystemFont, sans-serif;
+}

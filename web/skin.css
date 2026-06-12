@@ -1,0 +1,787 @@
+/* skin.css — macOS-native polish + selectable appearances for faces-gui-mac-app.
+ *
+ * NOT part of the original faces-demo. Loaded AFTER faces.css so it can restyle
+ * the chrome (wrapper card, toolbar, buttons, headings, footer) without editing
+ * the verbatim faces.css. The grid cells / faces themselves are left faithful.
+ *
+ * Appearance is chosen by a body class (set live from Settings):
+ *   skin-system (follows macOS light/dark) · skin-light · skin-dark · skin-gradient
+ *
+ * SPDX-License-Identifier: Apache-2.0 */
+
+/* ---- Appearance variables (defaults = light) ---------------------------- */
+body {
+    margin: 0;
+    /* Reserve 28px for the transparent title bar (fullSizeContentView). */
+    padding-top: 28px;
+    background: var(--app-bg, #ececec);
+    background-attachment: fixed;
+    background-size: cover;
+    background-repeat: no-repeat;
+
+    --app-bg: #ececec;
+    --card-bg: rgba(255, 255, 255, 0.82);
+    --card-border: rgba(0, 0, 0, 0.08);
+    --card-shadow: 0 12px 34px rgba(0, 0, 0, 0.18);
+    --text: #1d1d1f;
+    --text-dim: rgba(0, 0, 0, 0.55);
+    --toolbar-bg: rgba(120, 120, 128, 0.10);
+    --btn-bg: rgba(255, 255, 255, 0.92);
+    --btn-bg-hover: #ffffff;
+    --btn-text: #1d1d1f;
+    --btn-border: rgba(0, 0, 0, 0.14);
+    --accent: #0a84ff;
+    --input-bg: #ffffff;
+    --input-border: rgba(0, 0, 0, 0.18);
+    --footer-bg: rgba(0, 0, 0, 0.28);
+    --footer-text: #ffffff;
+    --cell-scale: 1;
+}
+
+/* Dark vars, shared by skin-dark and skin-system-in-dark. */
+body.skin-dark,
+body.skin-system.is-dark {
+    --app-bg: #1c1c1e;
+    --card-bg: rgba(44, 44, 46, 0.78);
+    --card-border: rgba(255, 255, 255, 0.10);
+    --card-shadow: 0 12px 34px rgba(0, 0, 0, 0.45);
+    --text: #f5f5f7;
+    --text-dim: rgba(255, 255, 255, 0.55);
+    --toolbar-bg: rgba(255, 255, 255, 0.06);
+    --btn-bg: rgba(255, 255, 255, 0.12);
+    --btn-bg-hover: rgba(255, 255, 255, 0.20);
+    --btn-text: #f5f5f7;
+    --btn-border: rgba(255, 255, 255, 0.16);
+    --accent: #0a84ff;
+    --input-bg: rgba(255, 255, 255, 0.08);
+    --input-border: rgba(255, 255, 255, 0.22);
+    --footer-bg: rgba(0, 0, 0, 0.45);
+    --footer-text: #f5f5f7;
+}
+
+@media (prefers-color-scheme: dark) {
+    body.skin-system {
+        --app-bg: #1c1c1e;
+        --card-bg: rgba(44, 44, 46, 0.78);
+        --card-border: rgba(255, 255, 255, 0.10);
+        --card-shadow: 0 12px 34px rgba(0, 0, 0, 0.45);
+        --text: #f5f5f7;
+        --text-dim: rgba(255, 255, 255, 0.55);
+        --toolbar-bg: rgba(255, 255, 255, 0.06);
+        --btn-bg: rgba(255, 255, 255, 0.12);
+        --btn-bg-hover: rgba(255, 255, 255, 0.20);
+        --btn-text: #f5f5f7;
+        --btn-border: rgba(255, 255, 255, 0.16);
+        --input-bg: rgba(255, 255, 255, 0.08);
+        --input-border: rgba(255, 255, 255, 0.22);
+        --footer-bg: rgba(0, 0, 0, 0.45);
+        --footer-text: #f5f5f7;
+    }
+}
+
+/* The original Buoyant navy->teal gradient (now optional). Light card on top. */
+body.skin-gradient {
+    --app-bg: linear-gradient(135deg,
+            #003359 0%, #004380 16.6%, #0067c4 33.3%,
+            #0085fd 50%, #00c1b4 66.6%, #64f9bf 100%);
+    --card-bg: rgba(255, 255, 255, 0.88);
+    --card-border: rgba(255, 255, 255, 0.5);
+    --card-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
+    --text: #11223a;
+    --text-dim: rgba(17, 34, 58, 0.6);
+    --footer-bg: rgba(0, 0, 0, 0.28);
+    --footer-text: #ffffff;
+}
+
+/* ---- Native chrome polish ---------------------------------------------- */
+.wrapper {
+    border: 1px solid var(--card-border);
+    border-radius: 18px;
+    background: var(--card-bg);
+    color: var(--text);
+    box-shadow: var(--card-shadow);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    backdrop-filter: blur(24px) saturate(180%);
+    padding: 1.6em 1.8em;
+    width: fit-content;
+    min-width: min(420px, calc(100vw - 40px));
+    max-width: calc(100vw - 40px);
+}
+
+#main {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 16px;
+    overflow: visible;
+}
+
+#column1,
+#column2,
+#column3 {
+    float: none;
+}
+
+#column1 {
+    width: calc(var(--grid-width, 512px) * var(--cell-scale));
+    height: calc(var(--grid-height, 512px) * var(--cell-scale));
+    flex: 0 0 auto;
+}
+
+#cells {
+    width: var(--grid-width, 512px);
+    height: var(--grid-height, 512px);
+    transform: scale(var(--cell-scale));
+    transform-origin: top left;
+    line-height: 0;
+}
+
+.cell {
+    box-sizing: content-box;
+    /* Smooth out polling-driven state changes: color, fade, and border transitions
+       prevent the snap/flicker that occurs when CellWatcher restores opacity or
+       when a new response arrives with a different color or error border. */
+    transition: background-color 0.35s ease, opacity 0.3s ease, border-color 0.25s ease;
+}
+
+.cell-smiley {
+    line-height: 120px;
+}
+
+h1 {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+    font-weight: 600;
+    font-size: 30px;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    margin: 2px 0 16px;
+}
+
+.toolbar {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 9px 12px;
+    margin: 0 auto 18px;
+    width: fit-content;
+    max-width: 100%;
+    background: var(--toolbar-bg);
+    border-radius: 12px;
+}
+
+.user-pill-wrap {
+    position: relative;
+    display: inline-flex;
+}
+
+.user-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font: 13px -apple-system, BlinkMacSystemFont, sans-serif;
+    color: var(--btn-text);
+    background: var(--btn-bg);
+    border: 1px solid var(--btn-border);
+    border-radius: 999px;
+    padding: 5px 10px;
+    cursor: pointer;
+}
+
+.user-pill-label {
+    color: var(--text-dim);
+}
+
+.user-pill-value {
+    font-weight: 600;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.user-editor {
+    display: none;
+    position: absolute;
+    z-index: 10000;
+    top: calc(100% + 8px);
+    right: 0;
+    width: 240px;
+    padding: 12px;
+    border-radius: 12px;
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    box-shadow: var(--card-shadow);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    backdrop-filter: blur(24px) saturate(180%);
+}
+
+.user-editor.open {
+    display: block;
+}
+
+.user-editor label {
+    display: block;
+    font: 12px -apple-system, BlinkMacSystemFont, sans-serif;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+}
+
+.user-editor input {
+    box-sizing: border-box;
+    width: 100%;
+    font: 13px -apple-system, BlinkMacSystemFont, sans-serif;
+    color: var(--text);
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 7px;
+    padding: 7px 8px;
+}
+
+.user-editor-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.user-editor-actions button {
+    font: 12px -apple-system, BlinkMacSystemFont, sans-serif;
+    border-radius: 7px;
+    padding: 5px 9px;
+    border: 1px solid var(--btn-border);
+    color: var(--btn-text);
+    background: var(--btn-bg);
+}
+
+.roundedButton {
+    -webkit-appearance: none;
+    appearance: none;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 6px 13px;
+    min-width: 0;
+    border-radius: 7px;
+    border: 1px solid var(--btn-border);
+    background: var(--btn-bg);
+    color: var(--btn-text);
+    box-shadow: 0 1px 1.5px rgba(0, 0, 0, 0.05);
+    cursor: pointer;
+    transition: background 0.12s ease, transform 0.04s ease;
+}
+
+.roundedButton:hover {
+    background: var(--btn-bg-hover);
+}
+
+.roundedButton:active {
+    transform: translateY(0.5px);
+}
+
+#userDiv,
+#timer {
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 13px;
+    color: var(--text);
+}
+
+#userName {
+    font: 13px -apple-system, BlinkMacSystemFont, sans-serif;
+    padding: 5px 9px;
+    border: 1px solid var(--input-border);
+    border-radius: 7px;
+    background: var(--input-bg);
+    color: var(--text);
+    outline: none;
+}
+
+#userName:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+/* Legend text + popup follow the appearance. */
+.key {
+    color: var(--text);
+}
+
+.key-popup-content {
+    background: var(--card-bg);
+    color: var(--text);
+    border: 1px solid var(--card-border);
+    border-radius: 16px;
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    backdrop-filter: blur(24px) saturate(180%);
+}
+
+.key-popup-header h2 {
+    color: var(--text);
+}
+
+.site-footer {
+    background: var(--footer-bg);
+    color: var(--footer-text);
+}
+
+/* Soften the divider lines of the pods column to a hairline that adapts. */
+.pod-stats {
+    border-left: 1px solid var(--card-border);
+    border-right: 1px solid var(--card-border);
+}
+
+/* ---- Debug overlay ------------------------------------------------------ */
+.debug-panel {
+    display: none;
+    position: fixed;
+    z-index: 20000;
+    left: 18px;
+    right: 18px;
+    bottom: 18px;
+    height: min(55vh, 560px);
+    color: var(--text);
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 14px;
+    box-shadow: var(--card-shadow);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    backdrop-filter: blur(24px) saturate(180%);
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.debug-panel.open {
+    display: flex;
+    flex-direction: column;
+}
+
+.debug-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--card-border);
+    background: var(--toolbar-bg);
+}
+
+.debug-summary {
+    color: var(--text-dim);
+    margin-left: 8px;
+    font-size: 12px;
+}
+
+.debug-actions button {
+    margin-left: 8px;
+    border: 1px solid var(--btn-border);
+    background: var(--btn-bg);
+    color: var(--btn-text);
+    border-radius: 7px;
+    padding: 4px 8px;
+}
+
+.debug-body {
+    display: grid;
+    grid-template-columns: minmax(360px, 0.95fr) minmax(320px, 1.05fr);
+    min-height: 0;
+    flex: 1;
+}
+
+.debug-body table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 12px;
+}
+
+.debug-body thead {
+    position: sticky;
+    top: 0;
+    background: var(--card-bg);
+}
+
+.debug-body th,
+.debug-body td {
+    text-align: left;
+    padding: 5px 8px;
+    border-bottom: 1px solid var(--card-border);
+    white-space: nowrap;
+}
+
+.debug-body tbody {
+    cursor: pointer;
+}
+
+.debug-body tbody tr:hover {
+    background: var(--toolbar-bg);
+}
+
+.debug-body td.ok {
+    color: #30d158;
+}
+
+.debug-body td.bad {
+    color: #ff453a;
+}
+
+.debug-body > table {
+    display: block;
+    overflow: auto;
+}
+
+.debug-detail {
+    margin: 0;
+    padding: 10px 12px;
+    border-left: 1px solid var(--card-border);
+    overflow: auto;
+    font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--text);
+    background: rgba(0, 0, 0, 0.04);
+}
+
+/* ── Debug overview bar (summary stats at top of debug panel) ─────────── */
+.debug-overview {
+    display: flex;
+    gap: 10px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--card-border);
+    background: var(--toolbar-bg);
+    overflow-x: auto;
+    flex-wrap: wrap;
+}
+
+.debug-overview-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 64px;
+    padding: 4px 10px;
+    border-radius: 8px;
+    background: var(--btn-bg);
+    border: 1px solid var(--btn-border);
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.debug-overview-stat .dov-val {
+    font-size: 18px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+}
+
+.debug-overview-stat .dov-label {
+    font-size: 10px;
+    color: var(--text-dim);
+    white-space: nowrap;
+}
+
+.debug-overview-stat.dov-ok    .dov-val { color: #30d158; }
+.debug-overview-stat.dov-err   .dov-val { color: #ff453a; }
+.debug-overview-stat.dov-slow  .dov-val { color: #ff9f0a; }
+.debug-overview-stat.dov-rate  .dov-val { color: var(--accent); }
+
+/* ── Unified fun-mode chrome ─────────────────────────────────────────── */
+/*
+ * All non-Classic modes (Buoyant, Cavern, Space, Garden) share these rules
+ * via the `body.visual-fun` class. Mode-specific colours / icons stay in
+ * each mode's own CSS but the STRUCTURE is identical so the user experience
+ * is consistent across all scenes.
+ *
+ * buoyant.js sets body.visual-fun (+ body.visual-<name>) on every mode switch.
+ */
+
+body.visual-fun {
+    overflow: hidden;
+}
+
+/* Hide the classic card chrome — scenes are full-bleed. */
+body.visual-fun #main {
+    position: absolute;
+    pointer-events: none;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+}
+
+/* The .wrapper collapses to a transparent strip that floats the toolbar. */
+body.visual-fun .wrapper {
+    position: fixed;
+    top: 42px; /* 28px title bar + 14px gap */
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    width: auto;
+    max-width: 94vw;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+
+body.visual-fun .wrapper h1 {
+    display: none;
+}
+
+/* Frosted pill toolbar — light version used for bright scenes (Buoyant, Garden).
+   Dark-scene modes (Space, Cavern) override the colours below. */
+body.visual-fun #toolbar {
+    margin: 0;
+    padding: 9px 16px;
+    border-radius: 999px;
+    background: rgba(250, 252, 255, 0.78);
+    border: 1px solid rgba(255, 255, 255, 0.66);
+    box-shadow: 0 8px 28px rgba(12, 35, 70, 0.20);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    color: #1b2a3a;
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 8px;
+}
+
+/* Classic-only controls hidden in all fun modes. !important: faces.js uses inline styles. */
+body.visual-fun #btnCounters,
+body.visual-fun #btnShowPods,
+body.visual-fun .site-footer,
+body.visual-fun footer {
+    display: none !important;
+}
+
+/* Show Key stays — each mode intercepts the click to show its own key. */
+body.visual-fun #btnShowKey {
+    display: inline-block !important;
+}
+
+/* Rate slider shown in ALL fun modes (toolbar.js installs it). */
+body.visual-fun .rate-control {
+    display: inline-flex !important;
+}
+
+/* Fun-mode roundedButton uses the same font/size but inherits the frosted toolbar bg. */
+body.visual-fun .roundedButton {
+    background: rgba(255, 255, 255, 0.45);
+    border-color: rgba(0, 0, 0, 0.12);
+    color: #1b2a3a;
+    font-size: 12px;
+    padding: 4px 10px;
+}
+
+body.visual-fun .roundedButton:hover {
+    background: rgba(255, 255, 255, 0.72);
+}
+
+/* Dark-toolbar override for Cavern and Space (cave/night scenes). */
+body.visual-cavern #toolbar,
+body.visual-space  #toolbar {
+    background: rgba(14, 22, 46, 0.82);
+    border-color: rgba(100, 140, 220, 0.35);
+    box-shadow: 0 8px 28px rgba(0, 5, 40, 0.50);
+    color: rgba(210, 225, 255, 0.95);
+}
+
+body.visual-cavern #toolbar {
+    background: rgba(30, 18, 8, 0.82);
+    border-color: rgba(180, 120, 50, 0.35);
+    color: rgba(255, 230, 180, 0.95);
+}
+
+body.visual-cavern .roundedButton,
+body.visual-space  .roundedButton {
+    background: rgba(255, 255, 255, 0.10);
+    border-color: rgba(255, 255, 255, 0.20);
+    color: rgba(220, 235, 255, 0.95);
+}
+
+body.visual-cavern .roundedButton {
+    color: rgba(255, 235, 190, 0.95);
+}
+
+/* Mode selector (same pill for all fun modes). */
+body.visual-fun .mode-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font: 12px -apple-system, BlinkMacSystemFont, sans-serif;
+    font-weight: 600;
+    color: inherit;
+    white-space: nowrap;
+}
+
+body.visual-fun .mode-control select {
+    color: inherit;
+    background: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 6px;
+    padding: 2px 4px;
+    font: inherit;
+    font-weight: 600;
+    outline: none;
+    cursor: pointer;
+}
+
+/* Rate slider (toolbar.js) */
+body.visual-fun .rate-control {
+    align-items: center;
+    gap: 6px;
+    font: 12px -apple-system, BlinkMacSystemFont, sans-serif;
+    font-weight: 600;
+    color: inherit;
+    white-space: nowrap;
+    background: transparent;
+    border: 0;
+    padding: 0;
+    border-radius: 0;
+}
+
+body.visual-fun .rate-control input[type="range"] {
+    width: 90px;
+    margin: 0;
+    accent-color: #4477AA;
+    cursor: pointer;
+}
+
+body.visual-fun .rate-control .rate-value {
+    font-weight: 600;
+    min-width: 40px;
+    text-align: right;
+    color: inherit;
+}
+
+/* User pill in fun modes */
+body.visual-fun .user-pill {
+    background: rgba(255, 255, 255, 0.22);
+    border-color: rgba(255, 255, 255, 0.30);
+    color: inherit;
+    font-size: 12px;
+    padding: 4px 9px;
+}
+
+body.visual-fun .user-pill:hover {
+    background: rgba(255, 255, 255, 0.40);
+}
+
+/* ---- Legacy mode: original upstream faces-gui look -------------------------
+ * The original faces-gui had NO wrapper card — content sat directly in <body>.
+ * We dissolve the wrapper to transparent so it acts as if it isn't there.
+ * ---- */
+body.visual-legacy {
+    background: #ffffff;
+    color: #000000;
+}
+
+/* Dissolve the wrapper — no card, no border, no background, flush top-left. */
+body.visual-legacy .wrapper {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    color: #000000;
+    margin: 0;
+    padding: 0.3em 0.8em;
+    width: auto;
+    min-width: unset;
+    max-width: none;
+}
+
+/* H1: left-aligned, plain sans-serif like the original. */
+body.visual-legacy h1 {
+    font-family: sans-serif;
+    text-align: left !important;
+    margin-top: 0.3em;
+    margin-bottom: 0.2em;
+}
+
+/* Toolbar: remove the frosted pill card — plain flex row, flush left. */
+body.visual-legacy .toolbar {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    gap: 4px;
+    margin: 0 0 6px 0;
+    width: auto;
+    justify-content: flex-start;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+
+/* Buttons: restore plain browser-default appearance. */
+body.visual-legacy .roundedButton {
+    -webkit-appearance: button;
+    appearance: button;
+    background: ButtonFace;
+    color: ButtonText;
+    border: 1px solid rgba(0, 0, 0, 0.3);
+    border-radius: 7px;
+    box-shadow: none;
+    font-family: sans-serif;
+    font-size: 13px;
+    padding: 2px 8px;
+    min-width: 5em;
+}
+
+/* User pill: un-pill it back to a plain inline text display. */
+body.visual-legacy .user-pill {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    font: 13px sans-serif;
+    color: #000000;
+    cursor: default;
+}
+body.visual-legacy .user-pill-label {
+    color: #000000;
+}
+
+/* Mode selector: plain browser select. */
+body.visual-legacy .mode-control {
+    font-family: sans-serif;
+    font-size: 13px;
+    color: #000000;
+}
+
+/* Grid: left-aligned columns, no centering. */
+body.visual-legacy #main {
+    justify-content: flex-start;
+}
+
+/* Rate slider is a fun-mode concept — irrelevant in Legacy. */
+body.visual-legacy .rate-control {
+    display: none !important;
+}
+
+/* Footer: the original had none — hide it. */
+body.visual-legacy .site-footer,
+body.visual-legacy footer {
+    display: none !important;
+}
+
+/* Legend column: always visible in Legacy (hardcoded on, can't be hidden). */
+body.visual-legacy #column3 {
+    display: inline-block !important;
+}
+
+/* "Show Key" button: redundant when legend is always shown. */
+body.visual-legacy #btnShowKey {
+    display: none !important;
+}
+
+/* Fun-mode stats HUD — bottom-right corner, shared across all modes. */
+.fun-stats-hud {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    pointer-events: none;
+}

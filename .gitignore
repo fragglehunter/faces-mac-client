@@ -1,0 +1,12 @@
+# macOS
+.DS_Store
+
+# Compiled app
+Faces.app/
+
+# Build artifacts
+build/
+*.icns
+
+# Python cache
+tools/__pycache__/

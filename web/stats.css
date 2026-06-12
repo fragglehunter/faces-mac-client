@@ -1,0 +1,77 @@
+/* stats.css — Shared stats HUD pills for all fun (non-Classic) visual modes.
+ *
+ * The .fun-stats-hud element is appended to each mode's root div by
+ * each mode's JS during boot. stats.js fills in individual .fhs spans.
+ *
+ * SPDX-License-Identifier: Apache-2.0 */
+
+/* Container: column of pills bottom-right, wrapping if many are active */
+.fun-stats-hud {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-width: 480px;
+  align-items: flex-end;
+  pointer-events: none;
+}
+
+/* Individual stat pill — ~2× larger than before */
+.fhs {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  font: 700 17px -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  -webkit-backdrop-filter: blur(14px) saturate(200%);
+  backdrop-filter: blur(14px) saturate(200%);
+  border: 1.5px solid rgba(255,255,255,0.35);
+  white-space: nowrap;
+  letter-spacing: -0.2px;
+  transition: transform 0.15s ease;
+  animation: fhs-in 0.25s ease;
+  pointer-events: auto;
+  cursor: default;
+}
+
+@keyframes fhs-in {
+  from { transform: scale(0.7); opacity: 0; }
+  to   { transform: scale(1);   opacity: 1; }
+}
+
+/* Color variants */
+.fhs-rate    { background: rgba(80,80,100,0.70); color: #e8eaf8; }
+.fhs-ok      { background: rgba(30,160,60,0.78); color: #e8ffe4; }
+.fhs-partial { background: rgba(180,100,0,0.78); color: #fff8e0; }
+.fhs-err     { background: rgba(200,30,50,0.80); color: #ffecec; }
+.fhs-timeout { background: rgba(140,60,170,0.78); color: #f5eeff; }
+.fhs-latch   { background: rgba(180,40,40,0.80); color: #ffecec; }
+.fhs-slow    { background: rgba(20,70,180,0.78); color: #ddeeff; }
+.fhs-score   {
+  background: rgba(255,218,20,0.92);
+  color: #3a2000;
+  border-color: rgba(255,255,255,0.65);
+  font-size: 18px;
+  animation: fhs-in 0.25s ease, fhs-score-bump 0.35s ease;
+}
+
+@keyframes fhs-score-bump {
+  0%   { transform: scale(1);    }
+  40%  { transform: scale(1.28); }
+  100% { transform: scale(1);    }
+}
+
+.fhs-score.bump {
+  animation: fhs-score-bump 0.30s ease;
+}
+
+/* Inner pill elements */
+.fhs-i { display: inline; }
+.fhs-v { display: inline; }
+.fhs-l {
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.72;
+  letter-spacing: 0.2px;
+  text-transform: uppercase;
+}

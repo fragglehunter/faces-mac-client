@@ -1,0 +1,82 @@
+/* space.css — Space visual mode layout.
+ *
+ * Shared chrome in skin.css under body.visual-fun and body.visual-space.
+ * This file adds Space-specific scene root, HUD, and key popup styles.
+ *
+ * SPDX-License-Identifier: Apache-2.0 */
+
+/* ── Scene root ─────────────────────────────────────────────────────────── */
+
+.space-root {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    background: #020818;   /* deep-space fallback */
+}
+
+body.visual-space .space-root {
+    display: block;
+}
+
+#space-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+}
+
+/* ── Space HUD ──────────────────────────────────────────────────────────── */
+
+.space-hud {
+    position: absolute;
+    right: 14px;
+    top: 14px;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+    pointer-events: none;
+    font: 16px -apple-system, BlinkMacSystemFont, sans-serif;
+    color: rgba(200, 220, 255, 0.92);
+}
+
+.space-hud > span {
+    padding: 7px 13px;
+    border-radius: 999px;
+    background: rgba(8, 14, 45, 0.72);
+    border: 1px solid rgba(80, 130, 210, 0.45);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    font-weight: 600;
+}
+
+/* ── Space key popup ─────────────────────────────────────────────────────── */
+
+.space-key-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(5, 10, 30, 0.55);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+}
+
+.space-key-overlay.open { display: flex; }
+
+.space-key-card {
+    width: min(680px, calc(100vw - 60px));
+    max-height: min(80vh, 780px);
+    overflow-y: auto;
+    background: rgba(12, 22, 55, 0.97);
+    color: rgba(210, 230, 255, 0.95);
+    border: 1px solid rgba(80, 120, 220, 0.45);
+    border-radius: 16px;
+    box-shadow: 0 24px 70px rgba(0, 10, 60, 0.65);
+    padding: 18px 22px 22px;
+    font: 13px -apple-system, BlinkMacSystemFont, sans-serif;
+}

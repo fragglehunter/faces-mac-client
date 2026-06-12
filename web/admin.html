@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Faces Admin</title>
+  <link rel="stylesheet" href="admin.css?v=3">
+</head>
+<body>
+  <div class="app-shell">
+    <nav class="sidebar" id="sidebar">
+      <div class="sidebar-logo">
+        <span class="logo-emoji">&#x1F603;</span>
+        <span class="nav-label">Faces Admin</span>
+      </div>
+
+      <a class="nav-item active" data-page="overview" href="#overview" data-tooltip="Overview">
+        <svg class="nav-icon" viewBox="0 0 16 16"><rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1"/><rect x="9" y="1.5" width="5.5" height="5.5" rx="1"/><rect x="1.5" y="9" width="5.5" height="5.5" rx="1"/><rect x="9" y="9" width="5.5" height="5.5" rx="1"/></svg>
+        <span class="nav-label">Overview</span>
+      </a>
+      <a class="nav-item" data-page="flow" href="#flow" data-tooltip="Pub/sub pipeline flow" id="nav-flow">
+        <svg class="nav-icon" viewBox="0 0 16 16"><circle cx="2.8" cy="8" r="1.7"/><circle cx="8" cy="8" r="1.7"/><circle cx="13.2" cy="8" r="1.7"/><path d="M4.5 8h1.8M9.7 8h1.8"/></svg>
+        <span class="nav-label">Flow</span>
+      </a>
+      <a class="nav-item" data-page="controls" href="#controls" data-tooltip="Controls">
+        <svg class="nav-icon" viewBox="0 0 16 16"><path d="M2 4.5h12M2 8h12M2 11.5h12"/><circle cx="6" cy="4.5" r="1.7"/><circle cx="11" cy="8" r="1.7"/><circle cx="4.5" cy="11.5" r="1.7"/></svg>
+        <span class="nav-label">Controls</span>
+      </a>
+      <a class="nav-item" data-page="faultinjection" href="#faultinjection" data-tooltip="Fault Injection">
+        <svg class="nav-icon" viewBox="0 0 16 16"><path d="M9 1.5 3.5 9H7.5L7 14.5 12.5 7H8.5L9 1.5z"/></svg>
+        <span class="nav-label">Fault Injection</span>
+      </a>
+      <a class="nav-item" id="nav-debug" style="display:none" data-page="debug" href="#debug" data-tooltip="Request log + HAR export">
+        <svg class="nav-icon" viewBox="0 0 16 16"><circle cx="8" cy="9.2" r="3.4"/><path d="M8 5.8V3.6M5.4 6.8 3.8 5.2M10.6 6.8l1.6-1.6M4.6 9.2H2.4M13.6 9.2h-2.2M5.4 11.6 3.8 13.2M10.6 11.6l1.6 1.6"/></svg>
+        <span class="nav-label">Debug</span>
+      </a>
+      <a class="nav-item" data-page="settings" href="#settings" data-tooltip="Settings">
+        <svg class="nav-icon" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.4"/><path d="M8 1.6v2M8 12.4v2M1.6 8h2M12.4 8h2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M12.5 3.5l-1.4 1.4M4.9 11.1l-1.4 1.4"/></svg>
+        <span class="nav-label">Settings</span>
+      </a>
+
+      <div class="sidebar-spacer"></div>
+      <div class="sidebar-bottom">
+        <button id="theme-toggle" class="sidebar-bottom-btn" data-tooltip="Switch theme">
+          <span class="nav-icon-emoji" id="theme-icon">&#x1F60E;</span>
+          <span class="nav-label" id="theme-label">Light Mode</span>
+        </button>
+        <button id="sign-out-btn" class="sidebar-bottom-btn" style="display:none" data-tooltip="Sign out of the admin session">
+          <span class="nav-icon-emoji">&#x1F6AA;</span>
+          <span class="nav-label">Sign Out</span>
+        </button>
+        <button id="collapse-btn" class="sidebar-bottom-btn" data-tooltip="Collapse sidebar">
+          <span class="nav-icon-emoji" id="collapse-icon">&#x25C0;</span>
+          <span class="nav-label">Collapse</span>
+        </button>
+      </div>
+    </nav>
+
+    <div class="main-col">
+      <header class="topbar">
+        <span id="poll-indicator" class="poll-dot idle" data-tooltip="Not connected">&#x25CF; <span id="poll-label">Polling</span></span>
+        <div id="health-chips" class="health-chips"></div>
+        <span class="topbar-spacer"></span>
+        <span id="mode-badge" class="mode-badge"></span>
+        <span id="endpoint-label" class="endpoint-label"></span>
+      </header>
+
+      <main class="content" id="content">
+        <div class="page active" id="page-overview">
+          <div class="page-section">
+            <h2>Service Health</h2>
+            <div id="ov-health-cards" class="health-cards"></div>
+          </div>
+          <div class="page-section">
+            <h2>Architecture</h2>
+            <div id="ov-arch" class="arch-wrap"></div>
+          </div>
+          <div class="page-section" id="infra-section" style="display:none">
+            <h2>Infrastructure</h2>
+            <div id="ov-infra" class="infra-wrap"></div>
+          </div>
+        </div>
+
+        <div class="page" id="page-flow">
+          <div id="flow-banners"></div>
+          <div class="page-section">
+            <h2>Pipeline</h2>
+            <div id="flow-pipe" class="arch-wrap"></div>
+          </div>
+          <div class="page-section">
+            <h2>Live Metrics</h2>
+            <div id="flow-metrics" class="metric-row"></div>
+          </div>
+          <div class="page-section">
+            <div class="chart-row">
+              <div class="chart-card">
+                <div class="chart-head">Queue Depth <span class="chart-cur" id="chart-depth-cur"></span></div>
+                <canvas id="spark-depth" class="sparkline-canvas" height="64"></canvas>
+              </div>
+              <div class="chart-card">
+                <div class="chart-head">Acknowledged <span class="chart-cur" id="chart-acked-cur"></span></div>
+                <canvas id="spark-acked" class="sparkline-canvas" height="64"></canvas>
+              </div>
+            </div>
+          </div>
+          <div class="page-section">
+            <h2>Flow Controls</h2>
+            <div id="flow-controls" class="flow-controls"></div>
+          </div>
+          <div class="page-section">
+            <h2>Scenarios</h2>
+            <div id="flow-scenarios" class="fi-scenario-panel"></div>
+          </div>
+          <div class="page-section">
+            <h2>Pods</h2>
+            <div id="flow-pods" class="flow-pods"></div>
+          </div>
+        </div>
+
+        <div class="page" id="page-controls">
+          <div class="page-section">
+            <h2>Smiley &amp; Color</h2>
+            <div class="ctrl-preview-bar">
+              <div id="ctrl-preview" class="ctrl-preview-cell"></div>
+              <div class="ctrl-preview-right">
+                <div class="target-toggle" id="ctrl-which">
+                  <button class="toggle-btn active" data-which="all">All</button>
+                  <button class="toggle-btn" data-which="center">Center</button>
+                  <button class="toggle-btn" data-which="edge">Edge</button>
+                </div>
+                <div class="ctrl-btn-row">
+                  <button id="ctrl-clear" class="btn">Clear</button>
+                  <button id="ctrl-apply" class="btn btn-primary">Apply</button>
+                </div>
+                <div class="ctrl-hint" id="ctrl-hint">Pick an emoji and/or a color, then Apply.</div>
+              </div>
+            </div>
+            <div class="pickers-row">
+              <div class="emoji-picker" id="emoji-picker">
+                <input id="emoji-search" class="text-input" type="text" placeholder="Search emoji&hellip;" autocomplete="off">
+                <div class="picker-tabs" id="emoji-tabs"></div>
+                <div class="picker-grid" id="emoji-grid"></div>
+                <div class="picker-custom-row">
+                  <input id="emoji-custom" class="text-input" type="text" placeholder="&hellip;or paste any emoji" autocomplete="off">
+                </div>
+              </div>
+              <div class="pickers-divider"></div>
+              <div class="color-picker" id="color-picker">
+                <div class="picker-subtitle">Color</div>
+                <div id="color-swatches" class="color-swatches"></div>
+                <div class="color-input-row">
+                  <input id="color-hex" class="text-input mono" type="text" placeholder="#RRGGBB" autocomplete="off">
+                  <input id="color-native" type="color" value="#66CCEE">
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="pods-row">
+            <div class="page-section pods-col">
+              <h2>Emoji Pods</h2>
+              <div id="smiley-pods" class="pod-selector"></div>
+            </div>
+            <div class="page-section pods-col">
+              <h2>Color Pods</h2>
+              <div id="color-pods" class="pod-selector"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="page" id="page-faultinjection">
+          <div class="page-section">
+            <h2>Status &amp; Targeting</h2>
+            <div class="fi-topo-hint">Click a zone, node, or pod to scope the next fault. Click again to clear.</div>
+            <div id="fi-topology" class="fi-topology infra-wrap"></div>
+          </div>
+          <div class="page-section">
+            <h2>Apply Fault</h2>
+            <div id="fi-global-panel" class="fi-global-panel"></div>
+          </div>
+          <div class="page-section">
+            <h2>Per-Service Control</h2>
+            <div id="fi-cards" class="fi-cards-grid"></div>
+          </div>
+          <div class="page-section">
+            <h2>Scenarios</h2>
+            <div id="fi-scenarios" class="fi-scenario-panel"></div>
+          </div>
+        </div>
+
+        <div class="page" id="page-debug">
+          <div class="page-section">
+            <h2>Request Log</h2>
+            <div class="dbg-toolbar">
+              <button id="dbg-pause" class="btn" data-tooltip="Stop recording new requests (existing entries are kept)">Pause</button>
+              <button id="dbg-clear" class="btn" data-tooltip="Discard all recorded requests">Clear</button>
+              <button id="dbg-har" class="btn btn-primary" data-tooltip="Save every recorded request/response as a HAR 1.2 file (importable into Chrome DevTools, Charles, etc.)">Download HAR</button>
+              <input id="dbg-filter" class="text-input mono dbg-filter" type="text" placeholder="filter by path&hellip;" autocomplete="off">
+              <span id="dbg-stats" class="dbg-stats"></span>
+            </div>
+            <div class="dbg-split">
+              <div class="dbg-table-wrap">
+                <table class="dbg-table">
+                  <thead><tr><th>Time</th><th>Method</th><th>Path</th><th>Status</th><th>ms</th></tr></thead>
+                  <tbody id="dbg-tbody"></tbody>
+                </table>
+              </div>
+              <div class="dbg-detail" id="dbg-detail"><div class="pod-empty">Select a request to inspect it.</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="page" id="page-settings">
+          <div class="page-section" id="set-conn-section" style="display:none">
+            <h2>Admin Connection</h2>
+            <div id="set-conn"></div>
+          </div>
+          <div class="page-section" id="set-maint-section" style="display:none">
+            <h2>Maintenance</h2>
+            <div id="set-maint" class="maint-cards"></div>
+          </div>
+          <div class="page-section">
+            <h2>Service Endpoints</h2>
+            <div id="set-endpoints"></div>
+          </div>
+          <div class="page-section">
+            <h2>Active Configuration</h2>
+            <div id="set-config"></div>
+          </div>
+          <div class="page-section">
+            <h2>Emojivoto Integration</h2>
+            <div id="set-emojivoto"></div>
+          </div>
+          <div class="page-section">
+            <h2>Debug</h2>
+            <div id="set-debug-toggle"></div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <div id="login-overlay" class="overlay" style="display:none">
+    <div class="login-wrap">
+      <div class="login-brand">
+        <span class="login-logo">&#x1F603;</span>
+        <div class="login-title">Faces Admin</div>
+        <div class="login-tagline">Keep &rsquo;em Smilin&rsquo;</div>
+      </div>
+      <form class="login-card" id="login-form">
+        <label class="field-label" for="login-user">Username</label>
+        <input id="login-user" class="text-input" type="text" autocomplete="username">
+        <label class="field-label" for="login-pass">Password</label>
+        <input id="login-pass" class="text-input" type="password" autocomplete="current-password">
+        <label class="login-remember">
+          <input id="login-remember" type="checkbox"> Keep me signed in for 7 days
+        </label>
+        <div class="login-error" id="login-error" style="display:none"></div>
+        <button class="btn btn-primary login-submit" id="login-submit" type="submit">Sign In</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="connect-overlay" class="overlay" style="display:none">
+    <div class="login-wrap">
+      <div class="login-brand">
+        <span class="login-logo">&#x1F603;</span>
+        <div class="login-title">Faces Admin</div>
+        <div class="login-tagline">Connect to your faces-admin service</div>
+      </div>
+      <div class="login-card">
+        <label class="field-label" for="connect-endpoint">Admin endpoint</label>
+        <input id="connect-endpoint" class="text-input mono" type="text"
+               placeholder="host:8888 or http://host" autocomplete="off">
+        <div class="connect-hint">IP, host, host:port, or full URL. <b>http://</b> is assumed.
+          Use a port-forward (e.g. <span class="mono">localhost:8888</span>) or the faces-admin Service address.</div>
+        <div class="login-error" id="connect-error" style="display:none"></div>
+        <button class="btn btn-primary login-submit" id="connect-submit" type="button">Connect</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="confirm-overlay" class="overlay" style="display:none">
+    <div class="modal-card">
+      <div class="modal-title" id="confirm-title"></div>
+      <div class="modal-body" id="confirm-body"></div>
+      <div class="modal-actions">
+        <button class="btn" id="confirm-cancel">Cancel</button>
+        <button class="btn" id="confirm-ok">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="js-tooltip"></div>
+  <div id="toast-stack"></div>
+
+  <script src="admin.js?v=3"></script>
+</body>
+</html>
