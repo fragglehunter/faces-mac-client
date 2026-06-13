@@ -158,6 +158,8 @@ private struct GridTab: View {
                             .help("Begin polling the face service immediately on launch.")
                         ToggleRow("Show pods column", isOn: $config.showPods)
                             .help("Show the per-pod status column alongside the grid.")
+                        ToggleRow("Keep faces until replaced", isOn: $config.persistFaces)
+                            .help("Each cell keeps its last face on screen until a new response replaces it, instead of fading out.")
                         if !isLegacy {
                             ToggleRow("Hide legend", isOn: $config.hideKey)
                                 .help("Hide the legend — a 'Show Key' button appears to reveal it on demand.")
@@ -190,16 +192,16 @@ private struct GridTab: View {
                     } else {
                         VStack(alignment: .leading, spacing: 10) {
                             HStack {
-                                Text("Scene rate")
+                                Text(funModeRateLabel)
                                     .font(.system(size: 13))
                                     .frame(width: 110, alignment: .leading)
-                                Slider(value: funRateLog, in: log2(0.1)...log2(200), step: 0.05)
-                                Text(funRateLabel)
+                                Slider(value: funRateLog, in: log2(0.5)...log2(20), step: 0.05)
+                                Text(funRateValueLabel)
                                     .font(.system(size: 12).monospacedDigit())
                                     .foregroundColor(.secondary)
                                     .frame(width: 80, alignment: .trailing)
                             }
-                            .help("Max events/sec admitted to this scene.")
+                            .help("Requests per second — controls both the animation rate and actual server request rate.")
 
                             HStack {
                                 Text("Slow at")
@@ -232,8 +234,14 @@ private struct GridTab: View {
         .onChange(of: config.startActive)       { _ in reload() }
         .onChange(of: config.showPods)          { _ in reload() }
         .onChange(of: config.hideKey)           { _ in reload() }
+        .onChange(of: config.persistFaces)      { _ in reload() }
         .onChange(of: config.paintIntervalMs)   { _ in config.save(); controller.scheduleReload() }
-        .onChange(of: config.funModeRatePerSec) { _ in config.save(); controller.pushLiveSettings() }
+        .onChange(of: config.funModeRatePerSec) { _ in
+            config.save()
+            controller.pushLiveSettings()
+            let mode = config.visualMode
+            if mode != "classic" && mode != "legacy" { controller.scheduleReload() }
+        }
         .onChange(of: config.slowThresholdMs)   { _ in config.save(); controller.pushLiveSettings() }
     }
 
@@ -248,16 +256,28 @@ private struct GridTab: View {
 
     private var funRateLog: Binding<Double> {
         Binding<Double>(
-            get: { log2(max(0.1, config.funModeRatePerSec)) },
-            set: { config.funModeRatePerSec = min(200, max(0.1, pow(2.0, $0))) }
+            get: { log2(max(0.5, config.funModeRatePerSec)) },
+            set: { config.funModeRatePerSec = min(20, max(0.5, pow(2.0, $0))) }
         )
     }
 
-    private var funRateLabel: String {
+    private var funModeRateLabel: String {
+        switch config.visualMode {
+        case "buoyant": return "Balloons/sec"
+        case "space":   return "Rockets/sec"
+        case "cavern":  return "Explorers/sec"
+        case "garden":  return "Flowers/sec"
+        case "claude":  return "Signals/sec"
+        case "fireworks": return "Fireworks/sec"
+        default:        return "Scene rate"
+        }
+    }
+
+    private var funRateValueLabel: String {
         let r = config.funModeRatePerSec
-        if r < 0.5 { return String(format: "1/%.0fs", 1.0 / r) }
-        if r >= 10 { return String(format: "%.0f/s", r) }
-        return String(format: "%.1f/s", r)
+        if r < 1.0  { return String(format: "1/%.0fs", (1.0 / r).rounded()) }
+        if r >= 10  { return String(format: "%.0f/s", r) }
+        return String(format: "%.1f/s", r).replacingOccurrences(of: ".0", with: "")
     }
 }
 

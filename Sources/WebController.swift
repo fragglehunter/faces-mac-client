@@ -187,6 +187,7 @@ final class WebController: NSObject, ObservableObject,
             "window.__applySpaceSettings__    && window.__applySpaceSettings__(\(json));",
             "window.__applyGardenSettings__   && window.__applyGardenSettings__(\(json));",
             "window.__applyClaudeSettings__   && window.__applyClaudeSettings__(\(json));",
+            "window.__applyFireworksSettings__ && window.__applyFireworksSettings__(\(json));",
         ].joined(separator: "\n")
         webView.evaluateJavaScript(js, completionHandler: nil)
     }
@@ -344,7 +345,7 @@ final class WebController: NSObject, ObservableObject,
         case "setVisualMode":
             if let body = message.body as? [String: Any] {
                 let next    = (body["visualMode"] as? String) ?? "classic"
-                let allowed = ["classic", "legacy", "buoyant", "cavern", "space", "garden", "claude"]
+                let allowed = ["classic", "legacy", "buoyant", "cavern", "space", "garden", "claude", "fireworks"]
                 config.visualMode = allowed.contains(next) ? next : "classic"
                 config.save()
             }
@@ -353,9 +354,12 @@ final class WebController: NSObject, ObservableObject,
         case "setFunModeRate", "setBuoyantRate":
             if let body = message.body as? [String: Any] {
                 let raw = body["ratePerSec"]
-                let n   = (raw as? Double) ?? Double((raw as? Int) ?? 8)
-                config.funModeRatePerSec = min(200, max(0.1, n))
+                let n   = (raw as? Double) ?? Double((raw as? Int) ?? 1)
+                config.funModeRatePerSec = min(20, max(0.5, n))
                 config.save()
+                // Reload so faces.js picks up the new effective paintIntervalMs.
+                let mode = config.visualMode
+                if mode != "classic" && mode != "legacy" { scheduleReload() }
             }
             reply(["ok": true])
 

@@ -23,8 +23,8 @@
   let visualMode = "classic";
   let slowThresholdMs = 900;
   // Admission rate: read from shared settings (toolbar.js owns the slider DOM).
-  // Range 0.1–200 events/sec. admittedTimes is a sliding 1-second window.
-  let maxRatePerSec = 8;
+  // Range 0.5–20 requests/sec. admittedTimes is a sliding 1-second window.
+  let maxRatePerSec = 0.5;
   const admittedTimes = [];
   let seq = 0;
   let running = false;
@@ -126,7 +126,7 @@
     slowThresholdMs = Number.isFinite(n) ? Math.max(100, n) : 900;
     // Prefer funModeRatePerSec (new), fall back to buoyantRatePerSec (legacy int).
     const r = Number(cfg.funModeRatePerSec || cfg.buoyantRatePerSec);
-    if (Number.isFinite(r) && r > 0) maxRatePerSec = Math.min(200, Math.max(0.1, r));
+    if (Number.isFinite(r) && r > 0) maxRatePerSec = Math.min(20, Math.max(0.5, r));
     // Sync the shared toolbar slider.
     if (window.__syncRateControl__) window.__syncRateControl__(maxRatePerSec);
     if (cfg.visualMode) setVisualMode(cfg.visualMode);
@@ -170,9 +170,9 @@
     ["&#x26C8;&#xFE0F;", "Storm clouds", false,
      "Clouds and lightning follow failures; the sky clears as soon as responses are healthy again.",
      "Set the error knobs back to 0, or Faces &#x25B8; Calm Faces (&#x2318;K)."],
-    ["&#x1F39A;&#xFE0F;", "Rate slider", false,
-     "Caps how many events per second are drawn (1&#x2013;20). Extra requests still happen &#x2014; they just aren't visualized.",
-     "Drag Rate in the toolbar, or Settings &#x25B8; Display &#x25B8; Buoyant event rate."],
+    ["&#x1F39A;&#xFE0F;", "Balloons/sec slider", false,
+     "Controls how many balloons per second are launched &#x2014; and the actual server request rate. Range: 1 every 2 sec (0.5/s) to 20/s.",
+     "Drag <b>Balloons</b> in the toolbar, or Settings &#x25B8; Grid &#x25B8; Balloons/sec."],
   ];
 
   function installKeyPopup() {
@@ -234,7 +234,7 @@
   }
 
   function setVisualMode(mode) {
-    const valid = ["classic", "legacy", "buoyant", "cavern", "space", "garden", "claude"];
+    const valid = ["classic", "legacy", "buoyant", "cavern", "space", "garden", "claude", "fireworks"];
     visualMode = valid.includes(mode) ? mode : "classic";
     const isFun = visualMode !== "classic" && visualMode !== "legacy";
     document.body.classList.toggle("visual-fun",     isFun);
@@ -245,6 +245,7 @@
     document.body.classList.toggle("visual-space",   visualMode === "space");
     document.body.classList.toggle("visual-garden",  visualMode === "garden");
     document.body.classList.toggle("visual-claude",  visualMode === "claude");
+    document.body.classList.toggle("visual-fireworks", visualMode === "fireworks");
     if (modeSelect && modeSelect.value !== visualMode) modeSelect.value = visualMode;
     if (visualMode === "buoyant") start();
     else stop();
@@ -254,6 +255,7 @@
     if (typeof window.__spaceSetMode__  === "function") window.__spaceSetMode__(visualMode);
     if (typeof window.__gardenSetMode__ === "function") window.__gardenSetMode__(visualMode);
     if (typeof window.__claudeSetMode__ === "function") window.__claudeSetMode__(visualMode);
+    if (typeof window.__fireworksSetMode__ === "function") window.__fireworksSetMode__(visualMode);
     // Legacy live-switch: if the page loaded with hideKey=true, #key is empty.
     // Click btnShowKey (which runs new Key(keyPopupBody)) then move content inline.
     if (visualMode === "legacy") {
@@ -312,11 +314,12 @@
   }
 
   function spawnFromRequest(entry) {
-    // Rate limiter: sliding 1-second window, max maxRatePerSec events admitted.
-    // Works for fractional rates (e.g. 0.33/s = 1 per 3s) via float comparison.
+    // Rate limiter: minimum-interval gate (works for fractional rates like 0.5/s).
     const nowMs = performance.now();
     while (admittedTimes.length && nowMs - admittedTimes[0] > 1000) admittedTimes.shift();
-    if (admittedTimes.length >= maxRatePerSec) return;
+    const minIntervalMs = 1000 / maxRatePerSec;
+    if (admittedTimes.length > 0 && nowMs - admittedTimes[admittedTimes.length - 1] < minIntervalMs) return;
+    if (admittedTimes.length >= Math.ceil(maxRatePerSec)) return;
     admittedTimes.push(nowMs);
 
     const parsed = classify(entry);
@@ -969,6 +972,9 @@
   }
 
   window.__setVisualMode__ = function (mode) {
+    // Update __FACES_SETTINGS__ immediately so currentModeLabel() in toolbar.js
+    // reads the correct mode before the applySettings callbacks fire.
+    if (window.__FACES_SETTINGS__) window.__FACES_SETTINGS__.visualMode = mode;
     setVisualMode(mode);
     return true;
   };

@@ -16,26 +16,42 @@
   "use strict";
 
   // ── Shared rate state ──────────────────────────────────────────────────────
-  // All fun modes read from this; only the slider and __applyBuoyantSettings__
+  // All fun modes read from this; only the slider and __applyXSettings__
   // write to it. Legacy buoyantRatePerSec is kept as an alias.
+  // Range: 0.5–20 requests/sec. This controls both animation and HTTP request rate.
+
+  var MODE_LABELS = {
+    buoyant: "Balloons",
+    space:   "Rockets",
+    cavern:  "Explorers",
+    garden:  "Flowers",
+    claude:  "Signals",
+    fireworks: "Fireworks"
+  };
+
+  function currentModeLabel() {
+    var s = window.__FACES_SETTINGS__ || {};
+    return MODE_LABELS[s.visualMode] || "Rate";
+  }
 
   function readRate() {
     var s = window.__FACES_SETTINGS__ || {};
-    return Math.max(0.1, Math.min(200, s.funModeRatePerSec || s.buoyantRatePerSec || 8));
+    return Math.max(0.5, Math.min(20, s.funModeRatePerSec || s.buoyantRatePerSec || 0.5));
   }
 
   function writeRate(val) {
-    val = Math.max(0.1, Math.min(200, val));
+    val = Math.max(0.5, Math.min(20, val));
     var s = window.__FACES_SETTINGS__ || {};
     s.funModeRatePerSec = val;
-    s.buoyantRatePerSec = Math.round(val);  // legacy alias
+    s.buoyantRatePerSec = val;  // legacy alias (keep as Double, not rounded)
     window.__FACES_SETTINGS__ = s;
 
-    // Notify all fun modes that use __applyBuoyantSettings__
+    // Notify all fun modes that use __applyXSettings__
     if (window.__applyBuoyantSettings__) window.__applyBuoyantSettings__(s);
     if (window.__applyCavernSettings__)  window.__applyCavernSettings__(s);
     if (window.__applySpaceSettings__)   window.__applySpaceSettings__(s);
     if (window.__applyGardenSettings__)  window.__applyGardenSettings__(s);
+    if (window.__applyFireworksSettings__) window.__applyFireworksSettings__(s);
 
     // Persist via Swift bridge
     var mh = window.webkit && window.webkit.messageHandlers;
@@ -44,24 +60,23 @@
   }
 
   function rateLabel(val) {
-    if (val < 0.5) {
+    if (val < 1) {
       return "1/" + Math.round(1 / val) + "s";
     }
-    if (val >= 100) return Math.round(val) + "/s";
-    if (val >= 10)  return val.toFixed(0) + "/s";
-    return val.toFixed(1).replace(".0", "") + "/s";
+    if (val >= 10) return Math.round(val) + "/s";
+    return parseFloat(val.toFixed(1)) + "/s";
   }
 
-  // Log-scale: slider position 0→1 maps to 0.1→200 events/sec.
-  var LOG_MIN = Math.log2(0.1);
-  var LOG_MAX = Math.log2(200);
+  // Log-scale: slider position 0→1 maps to 0.5→20 requests/sec.
+  var LOG_MIN = Math.log2(0.5);
+  var LOG_MAX = Math.log2(20);
 
   function sliderToRate(pos) {
-    return Math.max(0.1, Math.min(200, Math.pow(2, LOG_MIN + pos * (LOG_MAX - LOG_MIN))));
+    return Math.max(0.5, Math.min(20, Math.pow(2, LOG_MIN + pos * (LOG_MAX - LOG_MIN))));
   }
 
   function rateToSlider(rate) {
-    return (Math.log2(Math.max(0.1, rate)) - LOG_MIN) / (LOG_MAX - LOG_MIN);
+    return (Math.log2(Math.max(0.5, rate)) - LOG_MIN) / (LOG_MAX - LOG_MIN);
   }
 
   // ── Rate control DOM ────────────────────────────────────────────────────────
@@ -76,9 +91,9 @@
     var label = document.createElement("label");
     label.className = "rate-control";
     label.innerHTML =
-      '<span class="rate-label">Rate</span>' +
+      '<span class="rate-label">' + currentModeLabel() + '</span>' +
       '<input type="range" min="0" max="1" step="0.01" value="0.5">' +
-      '<span class="rate-value">8/s</span>';
+      '<span class="rate-value">1/2s</span>';
 
     rateInput   = label.querySelector("input");
     rateValueEl = label.querySelector(".rate-value");
@@ -101,11 +116,14 @@
     toolbar.appendChild(label);
   }
 
-  // Allow external code (Settings sidebar, buoyant.js) to sync the slider.
+  // Allow external code (Settings sidebar, fun mode JS) to sync the slider and label.
   window.__syncRateControl__ = function (val) {
     if (!rateInput || !rateValueEl) return;
-    rateInput.value = rateToSlider(Math.max(0.1, Math.min(200, val)));
+    rateInput.value = rateToSlider(Math.max(0.5, Math.min(20, val)));
     rateValueEl.textContent = rateLabel(val);
+    // Update the mode-specific label text (e.g. "Balloons", "Rockets").
+    var labelEl = rateInput.parentElement && rateInput.parentElement.querySelector(".rate-label");
+    if (labelEl) labelEl.textContent = currentModeLabel();
   };
 
   // ── User pill ───────────────────────────────────────────────────────────────
