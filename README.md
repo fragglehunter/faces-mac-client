@@ -1,11 +1,13 @@
+<p align="center">
+  <img width="460" height="300" src="web/logo-128.png">
+</p>
+
 # Face Mac Client
 
 A self-contained **native macOS app** (Apple Silicon) for demoing the
 [faces-demo](../faces-demo-copy) project. It replicates the faces-gui web UI
 as a native Swift app, runs its own built-in backend simulator, and can also
 connect to a real deployed `face` endpoint with no cluster-side changes needed.
-
-![the grid](web/logo-128.png)
 
 ---
 
