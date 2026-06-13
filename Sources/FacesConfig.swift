@@ -82,18 +82,27 @@ final class FacesConfig: ObservableObject {
     /// new response replaces it, instead of fading out by age.
     @Published var persistFaces: Bool = true
     @Published var user: String = "unknown"
+    /// Toolbar buttons that are also reachable from the macOS menu bar, so they
+    /// can be hidden from the in-web toolbar to declutter it.
+    @Published var showDebugButton: Bool = true
+    @Published var showSettingsButton: Bool = true
 
     // MARK: Rates
     /// Per-cell poll interval in ms. Total req/s ≈ (rows×cols×1000)/paintIntervalMs.
     @Published var paintIntervalMs: Int = 2000
     /// Max events/sec admitted to any fun mode scene. Stored as Double for sub-1/s support.
     @Published var funModeRatePerSec: Double = 0.5
+    /// "Super mode" lifts the fun-mode rate ceiling from 20/s to 200/s.
+    @Published var superMode: Bool = false
+
+    /// Upper bound for funModeRatePerSec given the current mode.
+    var funRateCap: Double { superMode ? 200 : 20 }
 
     // MARK: Visual / appearance
     @Published var emojiTheme: String = "native"
     @Published var appearance: String = "system"
     @Published var visualMode: String = "classic"
-    @Published var slowThresholdMs: Int = 900
+    @Published var slowThresholdMs: Int = 300
 
     // MARK: Crash reporting
     @Published var crashReportingEnabled: Bool = true
@@ -134,6 +143,8 @@ final class FacesConfig: ObservableObject {
             "persistFaces":      persistFaces,
             "paintIntervalMs":   effectivePaintIntervalMs,
             "user":              user,
+            "showDebugButton":    showDebugButton,
+            "showSettingsButton": showSettingsButton,
             "userHeader":        "X-Faces-User",
             "userAgent":         "faces-gui-mac-app",
             "emojiTheme":        emojiTheme,
@@ -141,6 +152,7 @@ final class FacesConfig: ObservableObject {
             "visualMode":        visualMode,
             "slowThresholdMs":   slowThresholdMs,
             "funModeRatePerSec": funModeRatePerSec,
+            "superMode":         superMode,
             // Legacy alias — buoyant.js still reads buoyantRatePerSec
             "buoyantRatePerSec": funModeRatePerSec,
             "defaultSmiley":     defaultSmiley,
@@ -179,6 +191,8 @@ final class FacesConfig: ObservableObject {
         var persistFaces: Bool?
         var paintIntervalMs: Int?
         var user: String
+        var showDebugButton: Bool?
+        var showSettingsButton: Bool?
         var emojiTheme: String?
         var appearance: String?
         var visualMode: String?
@@ -186,6 +200,7 @@ final class FacesConfig: ObservableObject {
         // Supports both old Int and new Double via Double? decode
         var funModeRatePerSec: Double?
         var buoyantRatePerSec: Int?   // legacy — migrated on load
+        var superMode: Bool?
         var crashReportingEnabled: Bool?
         var defaultSmiley: String
         var defaultColor: String
@@ -205,9 +220,11 @@ final class FacesConfig: ObservableObject {
             startActive: startActive, hideKey: hideKey, showPods: showPods,
             persistFaces: persistFaces,
             paintIntervalMs: paintIntervalMs, user: user,
+            showDebugButton: showDebugButton, showSettingsButton: showSettingsButton,
             emojiTheme: emojiTheme, appearance: appearance,
             visualMode: visualMode, slowThresholdMs: slowThresholdMs,
             funModeRatePerSec: funModeRatePerSec, buoyantRatePerSec: nil,
+            superMode: superMode,
             crashReportingEnabled: crashReportingEnabled,
             defaultSmiley: defaultSmiley, defaultColor: defaultColor,
             face: face, smiley: smiley, color: color
@@ -245,14 +262,18 @@ final class FacesConfig: ObservableObject {
         persistFaces   = p.persistFaces ?? true
         paintIntervalMs = p.paintIntervalMs ?? 2000
         user           = p.user
+        showDebugButton    = p.showDebugButton ?? true
+        showSettingsButton = p.showSettingsButton ?? true
         emojiTheme     = p.emojiTheme ?? "native"
         appearance     = p.appearance ?? "system"
         visualMode     = p.visualMode ?? "classic"
-        slowThresholdMs = p.slowThresholdMs ?? 900
+        slowThresholdMs = p.slowThresholdMs ?? 300
+        superMode      = p.superMode ?? false
         // Migrate legacy Int buoyantRatePerSec to funModeRatePerSec Double.
-        // Clamp to new 0.5–20/s range so saved values above 20 don't flood the network.
-        if let r = p.funModeRatePerSec { funModeRatePerSec = min(20, max(0.5, r)) }
-        else if let r = p.buoyantRatePerSec { funModeRatePerSec = min(20, max(0.5, Double(r))) }
+        // Clamp to the current cap (20, or 200 in super mode) so saved values
+        // can't exceed what's allowed for the active mode.
+        if let r = p.funModeRatePerSec { funModeRatePerSec = min(funRateCap, max(0.5, r)) }
+        else if let r = p.buoyantRatePerSec { funModeRatePerSec = min(funRateCap, max(0.5, Double(r))) }
         crashReportingEnabled = p.crashReportingEnabled ?? true
         defaultSmiley  = p.defaultSmiley
         defaultColor   = p.defaultColor
@@ -298,11 +319,14 @@ final class FacesConfig: ObservableObject {
         persistFaces = true
         paintIntervalMs  = 2000
         user             = "unknown"
+        showDebugButton    = true
+        showSettingsButton = true
         emojiTheme       = "native"
         appearance       = "system"
         visualMode       = "classic"
-        slowThresholdMs  = 900
+        slowThresholdMs  = 300
         funModeRatePerSec = 0.5
+        superMode        = false
         crashReportingEnabled = true
         defaultSmiley    = "Grinning"
         defaultColor     = "blue"
