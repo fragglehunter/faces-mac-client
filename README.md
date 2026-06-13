@@ -171,5 +171,3 @@ faces-gui-mac-app/
     └── jscheck.sh              JS syntax check (via JavaScriptCore)
 ```
 
-See [CLAUDE.md](CLAUDE.md) for the full architecture and session history, and
-[BUOYANT-MODE.md](BUOYANT-MODE.md) for a guide to adding new visual modes.
