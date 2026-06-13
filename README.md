@@ -1,5 +1,5 @@
 <p align="center">
-  <img width="150" height="150" src="web/logo.png">
+  <img width="150" height="150" src="web/logo-128.png">
 </p>
 
 # Face Mac Client
