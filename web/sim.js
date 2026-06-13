@@ -373,6 +373,7 @@
     paintIntervalMs: 2000,
     visualMode: "classic",
     slowThresholdMs: 900,
+    persistFaces: true,
   };
 
   // Connection mode: "simulator" (built-in fake backend) or "remote" (real face endpoint).

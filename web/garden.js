@@ -101,7 +101,7 @@
   var slowThreshMs = 900;
   var seq = 0, running = false, raf = 0, lastFrame = 0;
   var admittedTimes = [];
-  var maxRatePerSec = 8;
+  var maxRatePerSec = 0.5;
   var flowers   = [];
   var butterflies = [];
   var wclouds   = [];
@@ -158,7 +158,9 @@
   function spawnFromRequest(entry) {
     var now = performance.now();
     while (admittedTimes.length && now - admittedTimes[0] > 1000) admittedTimes.shift();
-    if (admittedTimes.length >= maxRatePerSec) return;
+    var minIntervalMs = 1000 / maxRatePerSec;
+    if (admittedTimes.length > 0 && now - admittedTimes[admittedTimes.length - 1] < minIntervalMs) return;
+    if (admittedTimes.length >= Math.ceil(maxRatePerSec)) return;
     if (flowers.length >= MAX_FLOWERS) return;
 
     var c = classify(entry);
@@ -942,7 +944,8 @@
       slowThreshMs = Math.max(100, cfg.slowThresholdMs);
     var rateVal = cfg.funModeRatePerSec || cfg.buoyantRatePerSec;
     if (typeof rateVal === "number")
-      maxRatePerSec = Math.max(0.1, Math.min(200, rateVal));
+      maxRatePerSec = Math.max(0.5, Math.min(20, rateVal));
+    if (window.__syncRateControl__) window.__syncRateControl__(maxRatePerSec);
   };
 
   // ===================================================================

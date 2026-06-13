@@ -132,10 +132,12 @@
     bus.subscribe(function (entry) {
       if (!entry) { rockets.length = 0; asteroids.length = 0; return; }
       if (visualMode !== "space") return;
-      // Rate limiter (sliding 1-second window; shared Rate slider via settings)
+      // Rate limiter: minimum-interval gate (works for fractional rates like 0.5/s).
       var nowMs = performance.now();
       while (admittedTimes.length && nowMs - admittedTimes[0] > 1000) admittedTimes.shift();
-      if (admittedTimes.length >= maxRatePerSec()) return;
+      var minIntervalMs = 1000 / maxRatePerSec();
+      if (admittedTimes.length > 0 && nowMs - admittedTimes[admittedTimes.length - 1] < minIntervalMs) return;
+      if (admittedTimes.length >= Math.ceil(maxRatePerSec())) return;
       admittedTimes.push(nowMs);
       spawnFromRequest(entry);
     });
@@ -144,7 +146,7 @@
   function maxRatePerSec() {
     var s = window.__FACES_SETTINGS__ || {};
     var r = Number(s.funModeRatePerSec || s.buoyantRatePerSec);
-    return Number.isFinite(r) ? Math.max(0.1, Math.min(200, r)) : 8;
+    return Number.isFinite(r) ? Math.max(0.5, Math.min(20, r)) : 0.5;
   }
 
   function generateStars(count) {
@@ -1014,9 +1016,9 @@
     ["&#x2728;", "Moon arrival sparkle", false,
      "Every rocket that reaches the Moon creates a small sparkle burst on arrival.",
      "Default calm settings &#x2014; automatic on every success."],
-    ["&#x1F39A;&#xFE0F;", "Rate slider", false,
-     "Caps how many rockets per second are launched (1&#x2013;20). Extra requests still happen &#x2014; they just aren't visualized.",
-     "Drag Rate in the toolbar, or Settings &#x25B8; Display &#x25B8; Buoyant event rate."],
+    ["&#x1F39A;&#xFE0F;", "Rockets/sec slider", false,
+     "Controls how many rockets per second are launched &#x2014; and the actual server request rate. Range: 1 every 2 sec (0.5/s) to 20/s.",
+     "Drag <b>Rockets</b> in the toolbar, or Settings &#x25B8; Grid &#x25B8; Rockets/sec."],
   ];
 
   function installKeyPopup() {
@@ -1160,7 +1162,10 @@
     else { stopSpace(); closeSpaceKey(); }
   };
 
-  window.__applySpaceSettings__ = function () { return true; };
+  // Sync the toolbar rate slider label when switching to space mode.
+  window.__applySpaceSettings__ = function () {
+    if (window.__syncRateControl__) window.__syncRateControl__(maxRatePerSec());
+  };
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", boot);

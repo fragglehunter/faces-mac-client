@@ -41,6 +41,7 @@
   <link rel="stylesheet" href="space.css?v=27">
   <link rel="stylesheet" href="garden.css?v=27">
   <link rel="stylesheet" href="claude.css?v=27">
+  <link rel="stylesheet" href="fireworks.css?v=30">
   <!-- skin.css restyles the chrome (card/toolbar/buttons) to feel macOS-native
        and defines the selectable appearances; loaded last so it can override. -->
   <link rel="stylesheet" href="skin.css?v=29">
@@ -68,6 +69,7 @@
           <option value="cavern">Cavern</option>
           <option value="garden">Garden</option>
           <option value="claude">Claude &#x2736;</option>
+          <option value="fireworks">Fireworks</option>
         </select>
       </label>
       <div id="userDiv" class="inline">
@@ -149,6 +151,15 @@
     </div>
   </div>
 
+  <!-- fireworks-root: fully procedural night-sky fireworks scene (no image asset) -->
+  <div id="fireworks-root" class="fireworks-root" aria-label="Grand Finale fireworks scene">
+    <canvas id="fireworks-canvas"></canvas>
+    <div class="fireworks-hud">
+      <span id="fireworks-mode-label">Fireworks</span>
+      <span id="fireworks-counts">0 aloft</span>
+    </div>
+  </div>
+
   <footer class="site-footer">
     &copy; <span id="copyright-year"></span> Buoyant Inc.
   </footer>
@@ -164,7 +175,7 @@
     "startActive": true,
     "hideKey": true,
     "showPods": false,
-    "paintIntervalMs": 2000,
+    "paintIntervalMs": 32000,
     "visualMode": "classic",
     "slowThresholdMs": 900
   }
@@ -180,6 +191,7 @@
   <script src="space.js?v=27"></script>
   <script src="garden.js?v=27"></script>
   <script src="claude.js?v=29"></script>
+  <script src="fireworks.js?v=32"></script>
   <script src="toolbar.js?v=27"></script>
   <script src="debug.js?v=27"></script>
 </BODY>

@@ -38,6 +38,7 @@ try {
         startActive: true,
         hideKey: false,
         showPods: false,
+        persistFaces: true,
     };
 }
 
@@ -60,6 +61,11 @@ let ROW_INTERVAL = Math.floor(PAINT_INTERVAL_MS / NUM_ROWS)
 
 // How long should it take to paint a single cell?
 let CELL_INTERVAL = Math.floor(PAINT_INTERVAL_MS / (NUM_ROWS * NUM_COLS))
+
+// faces-gui-mac-app: when true, a cell keeps its last face at full opacity
+// until a new response replaces it, instead of fading out by age (the classic
+// "freshness" fade). Sourced from Settings -> "Keep faces until replaced".
+const PERSIST_FACES = !!CONFIG.persistFaces;
 
 //////// Utilities
 //
@@ -840,11 +846,16 @@ class CellWatcher {
 
             let opacity = 1.0
 
-            if (age > this.maxVisible) {
-                opacity = 0.0
-            }
-            else if (age > this.maxSolid) {
-                opacity = (this.maxVisible - age) / (this.maxVisible - this.maxSolid)
+            // When persistence is enabled, skip the age-based fade entirely so
+            // the last painted face stays visible until its next response swaps
+            // it (the crossfade in Cell.run() still handles that replacement).
+            if (!PERSIST_FACES) {
+                if (age > this.maxVisible) {
+                    opacity = 0.0
+                }
+                else if (age > this.maxSolid) {
+                    opacity = (this.maxVisible - age) / (this.maxVisible - this.maxSolid)
+                }
             }
             // else {
             // 	if (cellCount > 0) {

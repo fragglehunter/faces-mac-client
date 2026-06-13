@@ -106,7 +106,7 @@
 
   // Settings
   let slowMs     = 900;
-  let maxRps     = 8;
+  let maxRps     = 0.5;
 
   // Interaction
   let pulseTotal = 0;
@@ -220,14 +220,16 @@
 
   function maxRatePerSec() {
     const s = window.__FACES_SETTINGS__ || {};
-    return clamp(0.1, s.funModeRatePerSec || s.buoyantRatePerSec || maxRps, 200);
+    return clamp(0.5, s.funModeRatePerSec || s.buoyantRatePerSec || maxRps, 20);
   }
 
   // ── Spawn signal ──────────────────────────────────────────────────
   function spawnFromRequest(entry) {
     const nowS = performance.now()/1000;
     admitted = admitted.filter(function(t){ return nowS-t<1.0; });
-    if (admitted.length >= maxRatePerSec()) return;
+    const minIntervalS = 1.0 / maxRatePerSec();
+    if (admitted.length > 0 && nowS - admitted[admitted.length - 1] < minIntervalS) return;
+    if (admitted.length >= Math.ceil(maxRatePerSec())) return;
     if (signals.length >= MAX_SIGNALS) return;
     admitted.push(nowS);
 
@@ -1051,7 +1053,7 @@
   function applySettings() {
     var s = window.__FACES_SETTINGS__ || {};
     slowMs  = s.slowThresholdMs || 900;
-    maxRps  = clamp(0.1, s.funModeRatePerSec || s.buoyantRatePerSec || 8, 200);
+    maxRps  = clamp(0.5, s.funModeRatePerSec || s.buoyantRatePerSec || 0.5, 20);
   }
 
   // ── Public hooks ──────────────────────────────────────────────────
@@ -1070,7 +1072,8 @@
   window.__applyClaudeSettings__ = function(json) {
     var s = (typeof json==="string") ? (safeJson(json)||{}) : (json||{});
     slowMs = s.slowThresholdMs || 900;
-    maxRps = clamp(0.1, s.funModeRatePerSec || s.buoyantRatePerSec || 8, 200);
+    maxRps = clamp(0.5, s.funModeRatePerSec || s.buoyantRatePerSec || 0.5, 20);
+    if (window.__syncRateControl__) window.__syncRateControl__(maxRps);
   };
 
   if (document.readyState==="loading") document.addEventListener("DOMContentLoaded", boot);

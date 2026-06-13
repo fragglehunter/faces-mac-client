@@ -46,6 +46,7 @@ enum FacesData {
         ("cavern",  "Cavern",  "mountain.2"),
         ("garden",  "Garden",  "leaf"),
         ("claude",  "Claude",  "brain"),
+        ("fireworks", "Fireworks", "sparkles"),
     ]
 }
 
@@ -77,13 +78,16 @@ final class FacesConfig: ObservableObject {
     @Published var startActive: Bool = true
     @Published var hideKey: Bool = true
     @Published var showPods: Bool = false
+    /// Grid modes (legacy/classic): keep each cell's last face on screen until a
+    /// new response replaces it, instead of fading out by age.
+    @Published var persistFaces: Bool = true
     @Published var user: String = "unknown"
 
     // MARK: Rates
     /// Per-cell poll interval in ms. Total req/s ≈ (rows×cols×1000)/paintIntervalMs.
     @Published var paintIntervalMs: Int = 2000
     /// Max events/sec admitted to any fun mode scene. Stored as Double for sub-1/s support.
-    @Published var funModeRatePerSec: Double = 8.0
+    @Published var funModeRatePerSec: Double = 0.5
 
     // MARK: Visual / appearance
     @Published var emojiTheme: String = "native"
@@ -108,7 +112,17 @@ final class FacesConfig: ObservableObject {
     // MARK: - Serialization for JS
 
     func settingsDict() -> [String: Any] {
-        [
+        // In fun modes, derive the actual poll interval from funModeRatePerSec so the
+        // request rate matches what the slider shows (balloons/rockets/etc. per second).
+        let isFunMode = !["legacy", "classic"].contains(visualMode)
+        let effectivePaintIntervalMs: Int
+        if isFunMode {
+            let cells = max(1, numRows * numCols)
+            effectivePaintIntervalMs = max(50, Int((Double(cells) * 1000.0 / max(0.5, funModeRatePerSec)).rounded()))
+        } else {
+            effectivePaintIntervalMs = paintIntervalMs
+        }
+        return [
             "connectionMode":    connectionMode,
             "endpoint":          endpoint,
             "numRows":           numRows,
@@ -117,7 +131,8 @@ final class FacesConfig: ObservableObject {
             "startActive":       startActive,
             "hideKey":           hideKey,
             "showPods":          showPods,
-            "paintIntervalMs":   paintIntervalMs,
+            "persistFaces":      persistFaces,
+            "paintIntervalMs":   effectivePaintIntervalMs,
             "user":              user,
             "userHeader":        "X-Faces-User",
             "userAgent":         "faces-gui-mac-app",
@@ -127,7 +142,7 @@ final class FacesConfig: ObservableObject {
             "slowThresholdMs":   slowThresholdMs,
             "funModeRatePerSec": funModeRatePerSec,
             // Legacy alias — buoyant.js still reads buoyantRatePerSec
-            "buoyantRatePerSec": Int(funModeRatePerSec.rounded()),
+            "buoyantRatePerSec": funModeRatePerSec,
             "defaultSmiley":     defaultSmiley,
             "defaultColor":      defaultColor,
             "services": [
@@ -161,6 +176,7 @@ final class FacesConfig: ObservableObject {
         var startActive: Bool
         var hideKey: Bool
         var showPods: Bool
+        var persistFaces: Bool?
         var paintIntervalMs: Int?
         var user: String
         var emojiTheme: String?
@@ -187,6 +203,7 @@ final class FacesConfig: ObservableObject {
             adminShowDebugPage: adminShowDebugPage,
             numRows: numRows, numCols: numCols, edgeSize: edgeSize,
             startActive: startActive, hideKey: hideKey, showPods: showPods,
+            persistFaces: persistFaces,
             paintIntervalMs: paintIntervalMs, user: user,
             emojiTheme: emojiTheme, appearance: appearance,
             visualMode: visualMode, slowThresholdMs: slowThresholdMs,
@@ -225,15 +242,17 @@ final class FacesConfig: ObservableObject {
         startActive    = p.startActive
         hideKey        = p.hideKey
         showPods       = p.showPods
+        persistFaces   = p.persistFaces ?? true
         paintIntervalMs = p.paintIntervalMs ?? 2000
         user           = p.user
         emojiTheme     = p.emojiTheme ?? "native"
         appearance     = p.appearance ?? "system"
         visualMode     = p.visualMode ?? "classic"
         slowThresholdMs = p.slowThresholdMs ?? 900
-        // Migrate legacy Int buoyantRatePerSec to funModeRatePerSec Double
-        if let r = p.funModeRatePerSec { funModeRatePerSec = r }
-        else if let r = p.buoyantRatePerSec { funModeRatePerSec = Double(r) }
+        // Migrate legacy Int buoyantRatePerSec to funModeRatePerSec Double.
+        // Clamp to new 0.5–20/s range so saved values above 20 don't flood the network.
+        if let r = p.funModeRatePerSec { funModeRatePerSec = min(20, max(0.5, r)) }
+        else if let r = p.buoyantRatePerSec { funModeRatePerSec = min(20, max(0.5, Double(r))) }
         crashReportingEnabled = p.crashReportingEnabled ?? true
         defaultSmiley  = p.defaultSmiley
         defaultColor   = p.defaultColor
@@ -276,13 +295,14 @@ final class FacesConfig: ObservableObject {
         adminShowDebugPage = false
         numRows = 4; numCols = 4; edgeSize = 1
         startActive = true; hideKey = true; showPods = false
+        persistFaces = true
         paintIntervalMs  = 2000
         user             = "unknown"
         emojiTheme       = "native"
         appearance       = "system"
         visualMode       = "classic"
         slowThresholdMs  = 900
-        funModeRatePerSec = 8.0
+        funModeRatePerSec = 0.5
         crashReportingEnabled = true
         defaultSmiley    = "Grinning"
         defaultColor     = "blue"

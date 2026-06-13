@@ -164,12 +164,12 @@
     bus.subscribe(function (entry) {
       if (!entry) { explorers.length = 0; return; }    // clear signal
       if (visualMode !== "cavern") return;
-      // Rate limiter (sliding 1s window). The toolbar Rate slider is owned by
-      // buoyant.js and shared across scene modes: its live value is published
-      // to __FACES_SETTINGS__.buoyantRatePerSec, which we read per spawn.
+      // Rate limiter: minimum-interval gate (works for fractional rates like 0.5/s).
       var nowMs = performance.now();
       while (admittedTimes.length && nowMs - admittedTimes[0] > 1000) admittedTimes.shift();
-      if (admittedTimes.length >= maxRatePerSec()) return;
+      var minIntervalMs = 1000 / maxRatePerSec();
+      if (admittedTimes.length > 0 && nowMs - admittedTimes[admittedTimes.length - 1] < minIntervalMs) return;
+      if (admittedTimes.length >= Math.ceil(maxRatePerSec())) return;
       admittedTimes.push(nowMs);
       addExplorer(makeExplorer(classify(entry)));
     });
@@ -178,7 +178,7 @@
   function maxRatePerSec() {
     var s = window.__FACES_SETTINGS__ || {};
     var r = Number(s.funModeRatePerSec || s.buoyantRatePerSec);
-    return Number.isFinite(r) ? Math.max(0.1, Math.min(200, r)) : 8;
+    return Number.isFinite(r) ? Math.max(0.5, Math.min(20, r)) : 0.5;
   }
 
   function resize() {
@@ -1039,9 +1039,9 @@
     ["&#x1F3AF;", "Crush an explorer!", false,
      "Click any explorer: it freezes in terror and a boulder flattens it with a dust poof. The scoreboard pill (top right) keeps your crush count &#x2014; badge upgrades at 10, 25, 50, and 100.",
      "Just click one. Purely visual &#x2014; no request is harmed."],
-    ["&#x1F39A;&#xFE0F;", "Rate slider", false,
-     "Caps how many explorers per second enter the cave (1&#x2013;20). Extra requests still happen &#x2014; they just aren't visualized.",
-     "Drag Rate in the toolbar (shared with Buoyant mode)."],
+    ["&#x1F39A;&#xFE0F;", "Explorers/sec slider", false,
+     "Controls how many explorers per second enter the cave &#x2014; and the actual server request rate. Range: 1 every 2 sec (0.5/s) to 20/s.",
+     "Drag <b>Explorers</b> in the toolbar, or Settings &#x25B8; Grid &#x25B8; Explorers/sec."],
   ];
 
   function installKeyPopup() {
@@ -1153,8 +1153,10 @@
     else { stopCavern(); closeCavernKey(); }
   };
 
-  // classify() reads __FACES_SETTINGS__ directly; hook kept for symmetry.
-  window.__applyCavernSettings__ = function () { return true; };
+  // Sync the toolbar rate slider label when switching to cavern mode.
+  window.__applyCavernSettings__ = function () {
+    if (window.__syncRateControl__) window.__syncRateControl__(maxRatePerSec());
+  };
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", boot);

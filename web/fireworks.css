@@ -1,0 +1,127 @@
+/* GRAND FINALE — Fireworks Mode full-bleed shell.
+ *
+ * Shared chrome (full-bleed shell, floating toolbar, Classic-chrome hiding,
+ * rate control, .fun-stats-hud placement) is in skin.css under body.visual-fun.
+ * This file only adds Fireworks-specific things.
+ *
+ * SPDX-License-Identifier: Apache-2.0 */
+
+/* ── Scene root ─────────────────────────────────────────────────────────── */
+
+.fireworks-root {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: #05060f;   /* night-sky fallback; the canvas paints the rest */
+  display: none;
+  overflow: hidden;
+}
+
+body.visual-fireworks .fireworks-root { display: block; }
+
+#fireworks-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* ── HUD (top-right mode label + active count) ──────────────────────────── */
+
+.fireworks-hud {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  pointer-events: none;
+  font: 16px -apple-system, BlinkMacSystemFont, sans-serif;
+  color: #cfd6ff;
+}
+
+.fireworks-hud > span {
+  padding: 7px 13px;
+  border-radius: 999px;
+  background: rgba(8, 12, 32, 0.78);
+  border: 1px solid rgba(120, 150, 255, 0.30);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  font-weight: 600;
+}
+
+/* ── Key popup ──────────────────────────────────────────────────────────── */
+
+.fireworks-key-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 10, 0.65);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.fireworks-key-overlay.open { display: flex; }
+
+.fireworks-key-card {
+  width: min(640px, calc(100vw - 60px));
+  max-height: 82vh;
+  overflow-y: auto;
+  background: rgba(8, 10, 28, 0.97);
+  border: 1px solid rgba(120, 150, 255, 0.30);
+  border-radius: 16px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.7);
+  padding: 18px 22px 22px;
+  color: #c0d0ff;
+  font: 13px -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.fireworks-key-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.fireworks-key-header h2 { margin: 0; font-size: 16px; color: #cfd6ff; }
+
+.fireworks-key-close {
+  border: 0;
+  background: transparent;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  color: #6080cc;
+  padding: 2px 6px;
+}
+
+.fireworks-key-close:hover { color: #a0b8ff; }
+
+.fwk-intro {
+  margin: 4px 0 12px;
+  color: #8090b8;
+  line-height: 1.45;
+}
+
+.fwk-intro b { color: #cfd6ff; font-weight: 600; }
+
+.fwk-row {
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  line-height: 1.4;
+}
+
+.fwk-row.fwk-star {
+  background: rgba(124, 92, 255, 0.10);
+  border: 1px solid rgba(124, 92, 255, 0.32);
+}
+
+.fwk-icon  { font-size: 24px; line-height: 1.25; text-align: center; }
+.fwk-title { font-weight: 700; color: #e6ecff; }
+.fwk-desc  { opacity: 0.85; margin-top: 2px; }
