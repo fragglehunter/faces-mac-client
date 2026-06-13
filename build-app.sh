@@ -48,6 +48,43 @@ ICON_SRC=""
 if command -v iconutil >/dev/null 2>&1 && command -v sips >/dev/null 2>&1 && [ -n "$ICON_SRC" ]; then
   ICONSET="${BUILD_DIR}/${APP_NAME}.iconset"
   mkdir -p "${ICONSET}"
+
+  # macOS app icons sit inside a rounded grid with ~10% transparent padding on
+  # each side. A full-bleed logo therefore looks noticeably bigger than other
+  # Dock/Finder/menu-bar icons. Composite the source onto a transparent 1024
+  # canvas at ~80% so ours matches. (Requires `swift`; falls back to full-bleed.)
+  MASTER="${BUILD_DIR}/icon-master.png"
+  if command -v swift >/dev/null 2>&1 && swift - "$ICON_SRC" "$MASTER" >/dev/null 2>&1 <<'SWIFT'
+import Foundation
+import CoreGraphics
+import ImageIO
+let a = CommandLine.arguments
+guard a.count >= 3,
+      let src = CGImageSourceCreateWithURL(URL(fileURLWithPath: a[1]) as CFURL, nil),
+      let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { exit(1) }
+let canvas = 1024, inset = 102            // ~10% padding -> ~80% content box
+let box = canvas - inset * 2
+guard let ctx = CGContext(data: nil, width: canvas, height: canvas, bitsPerComponent: 8,
+        bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { exit(1) }
+ctx.interpolationQuality = .high
+ctx.clear(CGRect(x: 0, y: 0, width: canvas, height: canvas))
+let iw = Double(img.width), ih = Double(img.height)
+let s = min(Double(box) / iw, Double(box) / ih)
+let dw = iw * s, dh = ih * s
+ctx.draw(img, in: CGRect(x: (Double(canvas) - dw) / 2, y: (Double(canvas) - dh) / 2, width: dw, height: dh))
+guard let out = ctx.makeImage(),
+      let dest = CGImageDestinationCreateWithURL(URL(fileURLWithPath: a[2]) as CFURL, "public.png" as CFString, 1, nil)
+      else { exit(1) }
+CGImageDestinationAddImage(dest, out, nil)
+exit(CGImageDestinationFinalize(dest) ? 0 : 1)
+SWIFT
+  then
+    ICON_SRC="$MASTER"
+  else
+    echo "    (icon padding step unavailable; using full-bleed source)"
+  fi
+
   sips -z 16 16     "$ICON_SRC" --out "${ICONSET}/icon_16x16.png"      >/dev/null 2>&1 || true
   sips -z 32 32     "$ICON_SRC" --out "${ICONSET}/icon_16x16@2x.png"   >/dev/null 2>&1 || true
   sips -z 32 32     "$ICON_SRC" --out "${ICONSET}/icon_32x32.png"      >/dev/null 2>&1 || true
