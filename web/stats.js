@@ -29,13 +29,21 @@
     edgeTotal:     0,
     centerSuccess: 0,
     edgeSuccess:   0,
+    active:        0,  // live objects currently on the active scene (set by each mode)
   };
+
+  // Mode-supplied noun for the "active" pill ("balloons", "rockets", …).
+  var activeNoun = "active";
+
+  // Sliding window of recent request timestamps (ms) for the measured req/s pill.
+  var reqTimes = [];
+  var RATE_WINDOW_MS = 4000;
 
   var subs   = [];
   var hudEls = [];
 
   function slowMs() {
-    return ((window.__FACES_SETTINGS__ || {}).slowThresholdMs) || 900;
+    return ((window.__FACES_SETTINGS__ || {}).slowThresholdMs) || 300;
   }
 
   function notify() {
@@ -53,6 +61,10 @@
     var lat   = entry.latencyMs || 0;
 
     d.total++;
+    // Measured request rate: stamp every ingested request, prune the window.
+    var nowMs = (entry.ts && Number(entry.ts)) || Date.now();
+    reqTimes.push(nowMs);
+    while (reqTimes.length && nowMs - reqTimes[0] > RATE_WINDOW_MS) reqTimes.shift();
     if (which === "edge") d.edgeTotal++;
     else d.centerTotal++;
     if (lat >= slowMs()) d.slow++;
@@ -86,12 +98,20 @@
   // Shared across all fun modes so Buoyant pops + Space blasts + Garden
   // plucks + Cavern crushes all add to the same scoreboard.
 
+  // Badge tiers climb well past 100 so heavy players keep unlocking new icons.
   var TIERS = [
-    { min: 1,   emoji: "&#x1F4A5;", badge: "First hit!"    },  // &#x1F4A5; = 💥
-    { min: 10,  emoji: "&#x1F3AF;", badge: "Sharpshooter"  },  // &#x1F3AF; = 🎯
-    { min: 25,  emoji: "&#x1F525;", badge: "On Fire"        },  // &#x1F525; = 🔥
-    { min: 50,  emoji: "&#x1F3C6;", badge: "Champion"       },  // &#x1F3C6; = 🏆
-    { min: 100, emoji: "&#x1F451;", badge: "Legend"         },  // &#x1F451; = 👑
+    { min: 1,    emoji: "&#x1F4A5;", badge: "First hit!"   },  // 💥
+    { min: 10,   emoji: "&#x1F3AF;", badge: "Sharpshooter" },  // 🎯
+    { min: 25,   emoji: "&#x1F525;", badge: "On Fire"      },  // 🔥
+    { min: 50,   emoji: "&#x1F3C6;", badge: "Champion"     },  // 🏆
+    { min: 100,  emoji: "&#x1F451;", badge: "Legend"       },  // 👑
+    { min: 200,  emoji: "&#x1F4AB;", badge: "Superstar"    },  // 💫
+    { min: 350,  emoji: "&#x1F680;", badge: "Cosmic"       },  // 🚀
+    { min: 500,  emoji: "&#x1F48E;", badge: "Diamond"      },  // 💎
+    { min: 750,  emoji: "&#x1F525;", badge: "Inferno"      },  // 🔥 (repeats glyph, new title)
+    { min: 1000, emoji: "&#x1F984;", badge: "Mythic"       },  // 🦄
+    { min: 2000, emoji: "&#x1F410;", badge: "G.O.A.T."     },  // 🐐
+    { min: 5000, emoji: "&#x1F308;", badge: "Transcendent" },  // 🌈
   ];
 
   function tier(n) {
@@ -114,7 +134,37 @@
 
   function reset() {
     for (var k in d) { if (typeof d[k] === "number") d[k] = 0; }
+    reqTimes.length = 0;
     notify();
+  }
+
+  // Each fun mode reports how many objects are live on its scene. Re-renders
+  // only when the value actually changes (modes call this every frame).
+  function setActive(count, noun) {
+    count = Math.max(0, count | 0);
+    noun = noun || "active";
+    if (count === d.active && noun === activeNoun) return;
+    d.active = count;
+    activeNoun = noun;
+    renderAll();
+  }
+
+  // Measured requests/sec over the sliding window (actual traffic, not the cap).
+  function liveRate() {
+    var nowMs = Date.now();
+    while (reqTimes.length && nowMs - reqTimes[0] > RATE_WINDOW_MS) reqTimes.shift();
+    if (!reqTimes.length) return 0;
+    // Use the span from the oldest sample so a fresh burst reads instantly
+    // instead of being divided by the full window.
+    var span = Math.max(1000, nowMs - reqTimes[0]);
+    return reqTimes.length / (span / 1000);
+  }
+
+  function fmtRate(r) {
+    if (r <= 0) return "0/s";
+    if (r < 1) return r.toFixed(1).replace(/\.0$/, "") + "/s";
+    if (r >= 10) return Math.round(r) + "/s";
+    return r.toFixed(1).replace(/\.0$/, "") + "/s";
   }
 
   // ── HUD rendering ────────────────────────────────────────────────────────
@@ -125,13 +175,15 @@
     return String(n);
   }
 
+  // Mirror toolbar.js readRate/rateLabel exactly so the "max rate" pill always
+  // matches the toolbar slider (same 0.5 fallback, same 0.5–20 clamp, same text).
   function rateLabel() {
     var s = window.__FACES_SETTINGS__ || {};
-    var r = Number(s.funModeRatePerSec || s.buoyantRatePerSec) || 8;
-    r = Math.max(0.1, Math.min(200, r));
-    if (r < 0.5) return "1/" + Math.round(1 / r) + "s";
+    var r = Number(s.funModeRatePerSec || s.buoyantRatePerSec) || 0.5;
+    r = Math.max(0.5, Math.min(s.superMode ? 200 : 20, r));
+    if (r < 1) return "1/" + Math.round(1 / r) + "s";
     if (r >= 10) return Math.round(r) + "/s";
-    return r.toFixed(1).replace(".0", "") + "/s";
+    return parseFloat(r.toFixed(1)) + "/s";
   }
 
   // Smart HUD update — preserves existing .fhs[data-key] spans so CSS
@@ -143,6 +195,12 @@
 
     // Build ordered list of pills to display.
     var want = [];
+    // Live activity on the current scene (balloons/rockets/explorers/…).
+    want.push({ key:"active", cls:"fhs-active", icon:"&#x1F7E2;", val:num(d.active), lbl:activeNoun,
+      title:"Objects currently live on the scene." });
+    // Measured request rate — actual traffic flowing through, not the cap.
+    want.push({ key:"reqs", cls:"fhs-reqs", icon:"&#x26A1;", val:fmtRate(liveRate()), lbl:"req/s",
+      title:"Measured request rate — actual requests per second over the last few seconds." });
     want.push({ key:"rate", cls:"fhs-rate", icon:"&#x23F5;", val:rateLabel(), lbl:"max rate",
       title:"Scene admission rate — max events/sec visualised. Adjust via the Rate slider." });
     if (d.success > 0)
@@ -166,7 +224,8 @@
     if (d.interactions > 0) {
       var t = tier(d.interactions);
       want.push({ key:"score", cls:"fhs-score", icon: t ? t.emoji : "&#x1F4A5;", val:num(d.interactions), lbl:"score",
-        title:"Your score! Click balloons, rockets, explorers, or flowers to score points. Badge upgrades at 10, 25, 50, 100." });
+        title:"Your score! Click balloons, rockets, explorers, or flowers to score points. Badge upgrades at: " +
+          TIERS.map(function (x) { return x.min; }).join(", ") + "." });
     }
 
     // Index current pill spans by data-key.
@@ -240,10 +299,16 @@
     setTimeout(connect, 0);
   }
 
+  // Keep the measured req/s pill decaying toward 0 when traffic stops (renders
+  // are otherwise only driven by incoming requests). Cheap: one re-render/sec.
+  setInterval(function () { if (hudEls.length) renderAll(); }, 1000);
+
   window.__FACES_STATS__ = {
     data:             d,
     subscribe:        function (fn) { subs.push(fn); },
     bumpInteraction:  bumpInteraction,
+    setActive:        setActive,
+    liveRate:         liveRate,
     reset:            reset,
     attachHUD:        attachHUD,
     tier:             tier,
