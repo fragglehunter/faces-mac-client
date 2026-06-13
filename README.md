@@ -1,4 +1,4 @@
-# faces-gui-mac-app
+# Face Mac Client
 
 A self-contained **native macOS app** (Apple Silicon) for demoing the
 [faces-demo](../faces-demo-copy) project. It replicates the faces-gui web UI
