@@ -409,10 +409,15 @@ body {
   width: 88px; height: 88px; flex: 0 0 88px;
   border-radius: 10px;
   border: 1px solid var(--border);
-  background: #66CCEE;
+  background: var(--surface);
   display: flex; align-items: center; justify-content: center;
   font-size: 46px;
   overflow: hidden;
+}
+/* No color chosen (initial / after Clear): blank dashed cell, not a real color. */
+.ctrl-preview-cell.is-empty {
+  background: transparent;
+  border-style: dashed;
 }
 .ctrl-preview-cell img { width: 56px; height: 56px; }
 .ctrl-preview-right { display: flex; flex-direction: column; gap: 9px; }

@@ -953,6 +953,18 @@
         '<button class="btn" id="flow-rewarm-banner">Re-warm Queue</button></div>';
     }
     repaint("flowBanners", $("#flow-banners"), html);
+    // Wire the banner's "Re-warm Queue" button once (it was previously dead —
+    // injected but never listened for). Mirrors the #flow-pub-warm control.
+    var banners = $("#flow-banners");
+    if (banners && !banners._wired) {
+      banners._wired = true;
+      banners.addEventListener("click", function (e) {
+        if (e.target.id !== "flow-rewarm-banner") return;
+        fetchJSON("PUT", "/api/controls/publisher", { warm: true }).then(function (r) {
+          showToast(r.ok ? "Re-warming queue from MySQL" : "Re-warm failed", r.ok ? "success" : "error");
+        });
+      });
+    }
   }
 
   function renderFlowMetrics() {
@@ -1341,7 +1353,15 @@
 
   function updatePreview() {
     var cell = $("#ctrl-preview");
-    cell.style.background = state.sel.colorHex || "#66CCEE";
+    // No color selected (e.g. after "Clear") → show a blank/unset cell, NOT the
+    // default blue, which misleadingly looked like blue was chosen.
+    if (state.sel.colorHex) {
+      cell.style.background = state.sel.colorHex;
+      cell.classList.remove("is-empty");
+    } else {
+      cell.style.background = "";   // fall back to the neutral empty CSS
+      cell.classList.add("is-empty");
+    }
     if (state.sel.smileyImg) cell.innerHTML = '<img src="' + esc(state.sel.smileyImg) + '">';
     else cell.textContent = state.sel.smiley ? decodeEntity(state.sel.smiley) : "";
   }
@@ -1799,12 +1819,16 @@
 
     repaint("fiScen", $("#fi-scenarios"), rows);
     var panel = $("#fi-scenarios");
+    // Stash the LATEST quick set on the (stable) panel node so the once-wired
+    // click handler doesn't act on a stale closure after a classic↔pubsub mode
+    // switch (Rate Limit's svc = chaosServices() is captured at render time).
+    panel._quick = quick;
     if (!panel._wired) {
       panel._wired = true;
       panel.addEventListener("click", function (e) {
         var b = e.target.closest(".scenario-btn"); if (!b) return;
         if (b.hasAttribute("data-quick")) {
-          var s = quick[+b.getAttribute("data-quick")];
+          var s = (panel._quick || quick)[+b.getAttribute("data-quick")];
           if (s.fn) s.fn();
           else applyChaosToServices(s.svc, fullChaosBody(s.body), null);
           return;
@@ -1995,6 +2019,7 @@
   // ================================================================ SETTINGS
 
   function renderSettings() {
+    renderAdminConnection();   // was never called → the endpoint editor stayed hidden in the native app
     renderMaintenance();
     renderServiceEndpoints();
     renderActiveConfig();
