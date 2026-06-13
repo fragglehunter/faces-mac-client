@@ -195,13 +195,16 @@ private struct GridTab: View {
                                 Text(funModeRateLabel)
                                     .font(.system(size: 13))
                                     .frame(width: 110, alignment: .leading)
-                                Slider(value: funRateLog, in: log2(0.5)...log2(20), step: 0.05)
+                                Slider(value: funRateLog, in: log2(0.5)...log2(config.superMode ? 200 : 20), step: 0.05)
                                 Text(funRateValueLabel)
                                     .font(.system(size: 12).monospacedDigit())
                                     .foregroundColor(.secondary)
                                     .frame(width: 80, alignment: .trailing)
                             }
                             .help("Requests per second — controls both the animation rate and actual server request rate.")
+
+                            ToggleRow("Super mode (up to 200/s)", isOn: $config.superMode)
+                                .help("Lift the rate ceiling from 20/s to 200/s. Warning: this drives a very high request rate.")
 
                             HStack {
                                 Text("Slow at")
@@ -235,12 +238,14 @@ private struct GridTab: View {
         .onChange(of: config.showPods)          { _ in reload() }
         .onChange(of: config.hideKey)           { _ in reload() }
         .onChange(of: config.persistFaces)      { _ in reload() }
-        .onChange(of: config.paintIntervalMs)   { _ in config.save(); controller.scheduleReload() }
-        .onChange(of: config.funModeRatePerSec) { _ in
-            config.save()
-            controller.pushLiveSettings()
-            let mode = config.visualMode
-            if mode != "classic" && mode != "legacy" { controller.scheduleReload() }
+        // Rate changes apply live (pushLiveSettings → __applyPollSettings__);
+        // reloading would wipe the active fun-mode scene mid-flight.
+        .onChange(of: config.paintIntervalMs)   { _ in config.save(); controller.pushLiveSettings() }
+        .onChange(of: config.funModeRatePerSec) { _ in config.save(); controller.pushLiveSettings() }
+        .onChange(of: config.superMode) { _ in
+            // Disabling super mode pulls any >20/s rate back under the ceiling.
+            if !config.superMode && config.funModeRatePerSec > 20 { config.funModeRatePerSec = 20 }
+            config.save(); controller.pushLiveSettings()
         }
         .onChange(of: config.slowThresholdMs)   { _ in config.save(); controller.pushLiveSettings() }
     }
@@ -257,7 +262,7 @@ private struct GridTab: View {
     private var funRateLog: Binding<Double> {
         Binding<Double>(
             get: { log2(max(0.5, config.funModeRatePerSec)) },
-            set: { config.funModeRatePerSec = min(20, max(0.5, pow(2.0, $0))) }
+            set: { config.funModeRatePerSec = min(config.funRateCap, max(0.5, pow(2.0, $0))) }
         )
     }
 
@@ -408,6 +413,11 @@ private struct ServicesTab: View {
         .onChange(of: config.connectionMode) { _ in config.save(); controller.scheduleReload() }
         .onChange(of: config.defaultSmiley)  { _ in live() }
         .onChange(of: config.defaultColor)   { _ in live() }
+        // Chaos sliders: save + push live so dragging Errors/Latch/Max RPS/Delay
+        // reaches the running simulator immediately (previously these never fired).
+        .onChange(of: config.face)           { _ in live() }
+        .onChange(of: config.smiley)         { _ in live() }
+        .onChange(of: config.color)          { _ in live() }
         .onChange(of: config.adminEndpoint)  { _ in saveAdmin() }
         .onChange(of: config.adminUsername)  { _ in saveAdmin() }
         .onChange(of: config.adminPassword)  { _ in saveAdmin() }
@@ -423,10 +433,35 @@ private struct ServicesTab: View {
 private struct AdvancedTab: View {
     @ObservedObject var config: FacesConfig
     let controller: WebController
+    @State private var showResetConfirm = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
+
+                VStack(alignment: .leading, spacing: 12) {
+                    TabSectionHeader("REQUEST USER")
+                    HStack {
+                        Text("User")
+                            .font(.system(size: 13))
+                            .frame(width: 110, alignment: .leading)
+                        TextField("unknown", text: $config.user)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    .help("The X-Faces-User header sent with every request. Leave blank / 'unknown' to hide the user pill in the toolbar.")
+                }
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 12) {
+                    TabSectionHeader("TOOLBAR")
+                    ToggleRow("Show Settings button", isOn: $config.showSettingsButton)
+                        .help("Show the Settings button in the in-app toolbar. Settings is also at ⌘, and in the Faces menu.")
+                    ToggleRow("Show Debug button", isOn: $config.showDebugButton)
+                        .help("Show the Debug button in the in-app toolbar. Debug is also at ⌘⌥D and in the Faces menu.")
+                }
+
+                Divider()
 
                 VStack(alignment: .leading, spacing: 12) {
                     TabSectionHeader("DEBUG")
@@ -450,12 +485,19 @@ private struct AdvancedTab: View {
                     TabSectionHeader("ACTIONS")
                     Button("Reload  ⌘R") { controller.reloadWithSettings() }
 
-                    Button("Reset All to Defaults") {
-                        config.resetAll()
-                        controller.reloadWithSettings()
-                    }
+                    Button("Reset All to Defaults") { showResetConfirm = true }
                     .foregroundColor(.red)
                     .help("Restore every setting to factory defaults and reload.")
+                    .confirmationDialog("Reset all settings to defaults?",
+                                        isPresented: $showResetConfirm, titleVisibility: .visible) {
+                        Button("Reset Everything", role: .destructive) {
+                            config.resetAll()
+                            controller.reloadWithSettings()
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("This restores every setting (connection, grid, simulator, appearance) to factory defaults and reloads.")
+                    }
                 }
 
                 Spacer(minLength: 0)
@@ -463,6 +505,9 @@ private struct AdvancedTab: View {
             .padding(20)
         }
         .onChange(of: config.crashReportingEnabled) { _ in config.save() }
+        .onChange(of: config.user)               { _ in config.save(); controller.pushUser() }
+        .onChange(of: config.showDebugButton)    { _ in config.save(); controller.pushLiveSettings() }
+        .onChange(of: config.showSettingsButton) { _ in config.save(); controller.pushLiveSettings() }
     }
 }
 
@@ -544,8 +589,9 @@ private struct CompactChaosEditor: View {
             }
         }
         .onChange(of: chaos) { _ in
+            // Commit any in-flight field edit; the live push happens via
+            // ServicesTab's .onChange(of: config.face/smiley/color).
             (NSApp.keyWindow?.firstResponder as? NSControl)?.abortEditing()
-            NotificationCenter.default.post(name: .chaosChanged, object: nil)
         }
     }
 
@@ -582,10 +628,6 @@ private struct CompactSlider: View {
         self.step   = step
         self.display = display
     }
-}
-
-extension Notification.Name {
-    static let chaosChanged = Notification.Name("FacesConfigChaosChanged")
 }
 
 // MARK: - Reusable helpers
