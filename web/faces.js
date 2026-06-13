@@ -62,6 +62,13 @@ let ROW_INTERVAL = Math.floor(PAINT_INTERVAL_MS / NUM_ROWS)
 // How long should it take to paint a single cell?
 let CELL_INTERVAL = Math.floor(PAINT_INTERVAL_MS / (NUM_ROWS * NUM_COLS))
 
+// Effective per-cell poll interval — MUTABLE so a rate change (fun-mode slider
+// or the classic request-rate slider) can take effect live, without reloading
+// the page. A reload wipes the active fun-mode scene (balloons/rockets/etc.)
+// mid-flight, which is jarring; rescheduling against this value instead keeps
+// the scene intact. Updated by window.__applyPollSettings__ (called from Swift).
+let EFFECTIVE_INTERVAL = PAINT_INTERVAL_MS;
+
 // faces-gui-mac-app: when true, a cell keeps its last face at full opacity
 // until a new response replaces it, instead of fading out by age (the classic
 // "freshness" fade). Sourced from Settings -> "Keep faces until replaced".
@@ -489,7 +496,7 @@ class Cell {
             return
         }
 
-        let toWait = this.interval - latency
+        let toWait = EFFECTIVE_INTERVAL - latency
         if (toWait < 0) {
             toWait = 0
         }
@@ -961,7 +968,7 @@ function initializeFaces() {
     }
 
     if (!CONFIG.hideKey) {
-        key = new Key($("key"));
+        new Key($("key"));   // was `key = …` — an undeclared global leak; value is unused
         updateWrapperMax();
     } else {
         $("column3").style.display = "none";
@@ -1027,6 +1034,19 @@ function initializeFaces() {
     updateWrapperMax();
     window.addEventListener("resize", updateWrapperMax);
 }
+
+// Live poll-rate update (called by Swift via pushLiveSettings). Reads the
+// effective per-cell interval so rate changes apply without a page reload.
+window.__applyPollSettings__ = function (json) {
+    try {
+        const s = typeof json === "string" ? JSON.parse(json) : (json || {});
+        const ms = Number(s.paintIntervalMs);
+        if (isFinite(ms) && ms > 0) EFFECTIVE_INTERVAL = Math.max(20, Math.round(ms));
+        return true;
+    } catch (e) {
+        return false;
+    }
+};
 
 // Initialize when DOM is ready
 console.log("Setting up Faces.js...");
