@@ -98,7 +98,7 @@
   var root, canvas, ctx, hudCounts;
   var dpr = 1, width = 800, height = 500;
   var visualMode   = "classic";
-  var slowThreshMs = 900;
+  var slowThreshMs = 300;
   var seq = 0, running = false, raf = 0, lastFrame = 0;
   var admittedTimes = [];
   var maxRatePerSec = 0.5;
@@ -142,12 +142,12 @@
     var latMs      = Number(entry.latencyMs || 0);
     var slow       = latMs >= slowThreshMs;
     var emoji      = (failed && !hasEmoji)
-      ? (status === 504 || status === 0 ? SLEEPY_EMOJI : DIZZY_EMOJI)
+      ? (status === 504 || status === 0 || status === 429 ? SLEEPY_EMOJI : DIZZY_EMOJI)
       : rawEmoji;
     return {
       id:++seq, status, latMs, slow, failed, partial, parseFail,
       hasColor, hasEmoji, color, emoji,
-      which: entry.which || "face",
+      which: entry.which || "center",
     };
   }
 
@@ -157,8 +157,9 @@
 
   function spawnFromRequest(entry) {
     var now = performance.now();
-    while (admittedTimes.length && now - admittedTimes[0] > 1000) admittedTimes.shift();
     var minIntervalMs = 1000 / maxRatePerSec;
+    var horizon = Math.max(1000, minIntervalMs);  // see buoyant.js note
+    while (admittedTimes.length && now - admittedTimes[0] > horizon) admittedTimes.shift();
     if (admittedTimes.length > 0 && now - admittedTimes[admittedTimes.length - 1] < minIntervalMs) return;
     if (admittedTimes.length >= Math.ceil(maxRatePerSec)) return;
     if (flowers.length >= MAX_FLOWERS) return;
@@ -259,11 +260,7 @@
     for (var bi = 0; bi < butterflies.length; bi++) butterflies[bi].age += dt;
     wclouds = wclouds.filter(function(w){ return (t - w.born) < w.life; });
 
-    if (hudCounts) {
-      var blooming = 0;
-      for (var fi=0;fi<flowers.length;fi++) if (flowers[fi].phase==="bloom") blooming++;
-      hudCounts.textContent = flowers.length + " growing · " + blooming + " blooming";
-    }
+    if (window.__FACES_STATS__) window.__FACES_STATS__.setActive(flowers.length, "growing");
   }
 
   function updatePhase(f, age, t) {
@@ -777,31 +774,10 @@
     bumpPluck();
   }
 
-  // Pluck scoreboard (same pattern as buoyant popCount)
-  function pluckBadge(n) {
-    if (n >= 100) return "&#x1F451;"; // 👑 crown
-    if (n >= 50)  return "&#x1F490;"; // 💐 bouquet
-    if (n >= 25)  return "&#x1F33A;"; // 🌺 hibiscus
-    if (n >= 10)  return "&#x1F33C;"; // 🌼 blossom
-    return "&#x1F337;";               // 🌷 tulip
-  }
-
+  // Scoreboard is the shared bottom-right stats HUD (.fhs-score).
   function bumpPluck() {
     pluckCount++;
     if (window.__FACES_STATS__) window.__FACES_STATS__.bumpInteraction();
-    if (!pluckPill) {
-      var hud = document.querySelector(".garden-hud");
-      if (!hud) return;
-      pluckPill = document.createElement("span");
-      pluckPill.className = "garden-pluck-pill";
-      hud.appendChild(pluckPill);
-    }
-    pluckPill.innerHTML = pluckCount === 1
-      ? pluckBadge(1) + " First pluck!"
-      : pluckBadge(pluckCount) + " " + pluckCount + " plucked";
-    pluckPill.classList.remove("bump");
-    void pluckPill.offsetWidth;
-    pluckPill.classList.add("bump");
   }
 
   // ===================================================================
@@ -889,8 +865,8 @@
   // ===================================================================
 
   function start() {
+    if (running) return;     // resize() after guard — see buoyant.js start() note
     resize();
-    if (running) return;
     running = true;
     lastFrame = performance.now();
     raf = requestAnimationFrame(loop);
@@ -944,7 +920,7 @@
       slowThreshMs = Math.max(100, cfg.slowThresholdMs);
     var rateVal = cfg.funModeRatePerSec || cfg.buoyantRatePerSec;
     if (typeof rateVal === "number")
-      maxRatePerSec = Math.max(0.5, Math.min(20, rateVal));
+      maxRatePerSec = Math.max(0.5, Math.min(200, rateVal));
     if (window.__syncRateControl__) window.__syncRateControl__(maxRatePerSec);
   };
 

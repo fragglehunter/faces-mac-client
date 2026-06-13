@@ -44,7 +44,7 @@
   var lastClickMs = 0;
   var rechargeUntil = 0, rechargeX = 0, rechargeY = 0;
 
-  var slowMs = 900, maxRps = 0.5;
+  var slowMs = 300, maxRps = 0.5;
 
   var successTimes = [];        // timestamps (s) of recent request successes
   var lastFinaleTime = -100;
@@ -129,7 +129,7 @@
   function settings() { return window.__FACES_SETTINGS__ || {}; }
   function maxRatePerSec() {
     var s = settings();
-    return clamp(Number(s.funModeRatePerSec || s.buoyantRatePerSec || maxRps) || 0.5, 0.5, 20);
+    return clamp(Number(s.funModeRatePerSec || s.buoyantRatePerSec || maxRps) || 0.5, 0.5, 200);   // 200 = super-mode ceiling (Swift caps stored value to 20 unless super mode)
   }
 
   // ── Classify a debug-bus entry into a firework "kind" ──────────────
@@ -166,8 +166,9 @@
   // ── Spawn from a request (rate-limited visuals) ────────────────────
   function spawnFromRequest(entry) {
     var nowS = performance.now() / 1000;
-    admitted = admitted.filter(function (t) { return nowS - t < 1.0; });
     var minInterval = 1.0 / maxRatePerSec();
+    var horizonS = Math.max(1.0, minInterval);  // see buoyant.js note
+    admitted = admitted.filter(function (t) { return nowS - t < horizonS; });
     if (admitted.length > 0 && nowS - admitted[admitted.length - 1] < minInterval) return;
     if (admitted.length >= Math.ceil(maxRatePerSec())) return;
     if (shells.length >= MAX_SHELLS) return;
@@ -359,7 +360,7 @@
   }
 
   // ── Lifecycle ──────────────────────────────────────────────────────
-  function start() { resize(); if (running) return; running = true; lastTs = performance.now() / 1000; raf = requestAnimationFrame(frame); }
+  function start() { if (running) return; resize(); running = true; lastTs = performance.now() / 1000; raf = requestAnimationFrame(frame); }
   function stop() {
     running = false;
     if (raf) cancelAnimationFrame(raf);
@@ -473,7 +474,7 @@
       if (rp.life >= rp.maxLife) ripples.splice(r, 1);
     }
 
-    if (hudCounts) hudCounts.textContent = aloft + " aloft";
+    if (window.__FACES_STATS__) window.__FACES_STATS__.setActive(aloft, "aloft");
   }
 
   // ── Draw ───────────────────────────────────────────────────────────
@@ -909,8 +910,8 @@
 
   function applySettings() {
     var s = settings();
-    slowMs = s.slowThresholdMs || 900;
-    maxRps = clamp(Number(s.funModeRatePerSec || s.buoyantRatePerSec) || 0.5, 0.5, 20);
+    slowMs = s.slowThresholdMs || 300;
+    maxRps = clamp(Number(s.funModeRatePerSec || s.buoyantRatePerSec) || 0.5, 0.5, 200);   // 200 = super-mode ceiling (Swift caps stored value to 20 unless super mode)
   }
 
   // ── Public hooks (called by buoyant.js dispatcher / WebController) ──
@@ -928,8 +929,8 @@
 
   window.__applyFireworksSettings__ = function (json) {
     var s = (typeof json === "string") ? (safeJson(json) || {}) : (json || {});
-    slowMs = s.slowThresholdMs || 900;
-    maxRps = clamp(Number(s.funModeRatePerSec || s.buoyantRatePerSec) || 0.5, 0.5, 20);
+    slowMs = s.slowThresholdMs || 300;
+    maxRps = clamp(Number(s.funModeRatePerSec || s.buoyantRatePerSec) || 0.5, 0.5, 200);   // 200 = super-mode ceiling (Swift caps stored value to 20 unless super mode)
     if (window.__syncRateControl__) window.__syncRateControl__(maxRps);
     return true;
   };
