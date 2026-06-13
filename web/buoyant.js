@@ -13,6 +13,8 @@
   const FALLBACK_EMOJI = "\u2753";        // question mark
   const DIZZY_EMOJI = "\ud83d\ude35";     // dizzy face
   const SLEEPY_EMOJI = "\ud83d\ude34";    // sleeping face
+  const SCARED_EMOJI = "\ud83d\ude31";    // \ud83d\ude31 face screaming in fear (balloon just popped)
+  const DEAD_EMOJI = "\ud83d\udc80";      // \ud83d\udc80 skull (basket has hit the ground)
   const MAX_EVENTS = 90;
   const MAX_WEATHER = 12;
 
@@ -21,7 +23,7 @@
   let width = 1;
   let height = 1;
   let visualMode = "classic";
-  let slowThresholdMs = 900;
+  let slowThresholdMs = 300;
   // Admission rate: read from shared settings (toolbar.js owns the slider DOM).
   // Range 0.5–20 requests/sec. admittedTimes is a sliding 1-second window.
   let maxRatePerSec = 0.5;
@@ -123,10 +125,10 @@
   function applyBuoyantSettings(raw) {
     const cfg = typeof raw === "string" ? safeJson(raw, {}) : (raw || {});
     const n = Number(cfg.slowThresholdMs);
-    slowThresholdMs = Number.isFinite(n) ? Math.max(100, n) : 900;
+    slowThresholdMs = Number.isFinite(n) ? Math.max(100, n) : 300;
     // Prefer funModeRatePerSec (new), fall back to buoyantRatePerSec (legacy int).
     const r = Number(cfg.funModeRatePerSec || cfg.buoyantRatePerSec);
-    if (Number.isFinite(r) && r > 0) maxRatePerSec = Math.min(20, Math.max(0.5, r));
+    if (Number.isFinite(r) && r > 0) maxRatePerSec = Math.min(200, Math.max(0.5, r));
     // Sync the shared toolbar slider.
     if (window.__syncRateControl__) window.__syncRateControl__(maxRatePerSec);
     if (cfg.visualMode) setVisualMode(cfg.visualMode);
@@ -147,7 +149,7 @@
      "Center-grid requests (/face/center/) ride the high sky; edge requests (/face/edge/) fly the low band. Same on the road: center walkers take the back lanes, edge walkers the front.",
      "Automatic &#x2014; based on each request's endpoint. Edge ring thickness: Settings &#x25B8; Display &#x25B8; Edge size."],
     ["&#x1F6B6;", "Road walker", false,
-     "A slow but successful response (latency &#x2265; slow threshold, default 900 ms) has to walk instead of fly. Its color becomes the dust trail.",
+     "A slow but successful response (latency &#x2265; slow threshold, default 300 ms) has to walk instead of fly. Its color becomes the dust trail.",
      "Settings (&#x2318;,) &#x25B8; Simulator &#x25B8; any service &#x25B8; Delay at/above the threshold. Tune the threshold in Settings &#x25B8; Display."],
     ["&#x1F4A5;", "Balloon falling out of the sky", true,
      "The face service itself failed fast (HTTP 5xx or an unparseable response): the balloon deflates, trails smoke, tumbles down and lands with a dust poof. Storm clouds roll in.",
@@ -236,6 +238,11 @@
   function setVisualMode(mode) {
     const valid = ["classic", "legacy", "buoyant", "cavern", "space", "garden", "claude", "fireworks"];
     visualMode = valid.includes(mode) ? mode : "classic";
+    // Keep the shared settings mode in sync FIRST so the toolbar's rate-control
+    // label (currentModeLabel reads __FACES_SETTINGS__.visualMode) updates to the
+    // new scene — otherwise it sticks on the previous mode's noun ("Rockets" etc).
+    // Create the object if absent (browser preview has no Swift-injected one).
+    (window.__FACES_SETTINGS__ || (window.__FACES_SETTINGS__ = {})).visualMode = visualMode;
     const isFun = visualMode !== "classic" && visualMode !== "legacy";
     document.body.classList.toggle("visual-fun",     isFun);
     document.body.classList.toggle("visual-classic", visualMode === "classic");
@@ -256,6 +263,8 @@
     if (typeof window.__gardenSetMode__ === "function") window.__gardenSetMode__(visualMode);
     if (typeof window.__claudeSetMode__ === "function") window.__claudeSetMode__(visualMode);
     if (typeof window.__fireworksSetMode__ === "function") window.__fireworksSetMode__(visualMode);
+    // Refresh the toolbar rate slider's label + position for the new mode.
+    if (window.__syncRateControl__) window.__syncRateControl__();
     // Legacy live-switch: if the page loaded with hideKey=true, #key is empty.
     // Click btnShowKey (which runs new Key(keyPopupBody)) then move content inline.
     if (visualMode === "legacy") {
@@ -278,8 +287,11 @@
   }
 
   function start() {
-    resize();
+    // resize() AFTER the running-guard: calling it while already running
+    // reallocates the canvas and blanks the scene for a frame (e.g. when a
+    // live settings push re-invokes setVisualMode for the current mode).
     if (running) return;
+    resize();
     running = true;
     lastFrame = performance.now();
     raf = requestAnimationFrame(frame);
@@ -316,8 +328,12 @@
   function spawnFromRequest(entry) {
     // Rate limiter: minimum-interval gate (works for fractional rates like 0.5/s).
     const nowMs = performance.now();
-    while (admittedTimes.length && nowMs - admittedTimes[0] > 1000) admittedTimes.shift();
     const minIntervalMs = 1000 / maxRatePerSec;
+    // Prune horizon must be at least the min interval, else for sub-1/s rates
+    // (min interval > 1000ms) the lone timestamp is pruned too early and the
+    // gate stops enforcing the gap during bursts.
+    const horizon = Math.max(1000, minIntervalMs);
+    while (admittedTimes.length && nowMs - admittedTimes[0] > horizon) admittedTimes.shift();
     if (admittedTimes.length > 0 && nowMs - admittedTimes[admittedTimes.length - 1] < minIntervalMs) return;
     if (admittedTimes.length >= Math.ceil(maxRatePerSec)) return;
     admittedTimes.push(nowMs);
@@ -351,8 +367,10 @@
       hasColor,
       hasEmoji,
       color,
-      emoji: failed && !hasEmoji ? (status === 504 || status === 0 ? DIZZY_EMOJI : FALLBACK_EMOJI) : emoji,
-      which: entry.which || "face",
+      // Match the shared convention (cavern/space/garden): timeout/rate-limit
+      // (504/0/429) → sleepy 😴; any other hard failure → dizzy 😵.
+      emoji: failed && !hasEmoji ? (status === 504 || status === 0 || status === 429 ? SLEEPY_EMOJI : DIZZY_EMOJI) : emoji,
+      which: entry.which || "center",
       row: entry.row,
       col: entry.col,
       born: performance.now() / 1000,
@@ -397,7 +415,7 @@
       born: nowSec() + rand(0, 1.0),
       duration: e.failed ? rand(4.0, 6.2) : rand(8.0, 12.0),
       color: e.color,
-      emoji: e.failed && !e.hasEmoji ? (e.status === 0 || e.status === 504 ? SLEEPY_EMOJI : FALLBACK_EMOJI) : e.emoji,
+      emoji: e.emoji,   // classify() already resolved the right glyph (sleepy/dizzy/real)
       failed: e.failed,
       partialError: e.partialError,
       unstable: !e.hasColor || e.partialError,
@@ -440,11 +458,7 @@
       const w = weather[i];
       if ((t - w.born) / w.duration > 1) weather.splice(i, 1);
     }
-    if (hudCounts) {
-      const balloons = objects.filter((o) => o.kind === "balloon").length;
-      const walkers = objects.length - balloons;
-      hudCounts.textContent = `${objects.length} active \u00b7 ${balloons} balloons \u00b7 ${walkers} walkers`;
-    }
+    if (window.__FACES_STATS__) window.__FACES_STATS__.setActive(objects.length, "aloft");
   }
 
   function draw(t) {
@@ -538,45 +552,23 @@
     o.popScale = pose.scale;
     o.popRot = pose.rot;
     o.landedAt = 0;
+    // The passenger panics the instant the envelope bursts; it turns into a
+    // skull once the basket slams into the road (see drawPoppedBalloon).
+    o.emoji = SCARED_EMOJI;
     // Keep the object alive past its crossing age until the fall finishes.
     o.duration = Math.max(o.duration, (t - o.born) + 5);
     bumpPopCounter();
     o.popNum = popCount; // for the milestone "+N!" floater
   }
 
-  // Pop scoreboard — a HUD pill that appears on the first pop and keeps
-  // score for the session, upgrading its badge as the count climbs.
-  // (Emoji as HTML entities — ASCII-safe regardless of charset.)
+  // Pop count is kept only for the in-scene milestone floater ("+N!"); the
+  // visible scoreboard is the shared bottom-right stats HUD (.fhs-score).
   let popCount = 0;
-  let popPill = null;
-
-  function popTierBadge(n) {
-    if (n >= 100) return "&#x1F451;"; // crown
-    if (n >= 50) return "&#x1F3C6;";  // trophy
-    if (n >= 25) return "&#x1F525;";  // fire
-    if (n >= 10) return "&#x1F3AF;";  // bullseye
-    return "&#x1F4A5;";               // boom
-  }
 
   function bumpPopCounter() {
     popCount++;
     // Shared stats module accumulates interactions across ALL fun modes.
     if (window.__FACES_STATS__) window.__FACES_STATS__.bumpInteraction();
-    if (!popPill) {
-      const hud = document.querySelector(".buoyant-hud");
-      if (!hud) return;
-      popPill = document.createElement("span");
-      popPill.id = "buoyantPops";
-      popPill.className = "buoyant-pop-pill";
-      hud.appendChild(popPill);
-    }
-    popPill.innerHTML = popCount === 1
-      ? `${popTierBadge(1)} First pop!`
-      : `${popTierBadge(popCount)} ${popCount} popped`;
-    // restart the bump animation on every pop
-    popPill.classList.remove("bump");
-    void popPill.offsetWidth;
-    popPill.classList.add("bump");
   }
 
   const POP_GRAVITY = 1500; // px/s^2 — snappy arcade fall
@@ -591,7 +583,7 @@
     let y = o.popY + 0.5 * POP_GRAVITY * ft * ft;
     if (y >= groundY) {
       y = groundY;
-      if (!o.landedAt) o.landedAt = t;
+      if (!o.landedAt) { o.landedAt = t; o.emoji = DEAD_EMOJI; }  // it didn't make it
     }
     const landed = !!o.landedAt;
     const x = o.popX + Math.min(ft, 0.8) * o.xJitter * 1.5;

@@ -40,6 +40,8 @@
 }
 
 /* Color variants */
+.fhs-active  { background: rgba(40,140,80,0.72);  color: #e6ffe9; }
+.fhs-reqs    { background: rgba(40,90,170,0.74);   color: #e4efff; }
 .fhs-rate    { background: rgba(80,80,100,0.70); color: #e8eaf8; }
 .fhs-ok      { background: rgba(30,160,60,0.78); color: #e8ffe4; }
 .fhs-partial { background: rgba(180,100,0,0.78); color: #fff8e0; }
@@ -63,6 +65,18 @@
 
 .fhs-score.bump {
   animation: fhs-score-bump 0.30s ease;
+}
+
+/* Stats are consolidated into the single bottom-right .fun-stats-hud cluster
+ * (stats.js). The legacy per-mode top-right HUDs (mode label + live count +
+ * per-mode score pill) are retired for a uniform layout across every mode. */
+.buoyant-hud,
+.cavern-hud,
+.space-hud,
+.garden-hud,
+.claude-hud,
+.fireworks-hud {
+  display: none !important;
 }
 
 /* Inner pill elements */

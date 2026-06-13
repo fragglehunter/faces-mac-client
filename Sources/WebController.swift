@@ -179,6 +179,8 @@ final class WebController: NSObject, ObservableObject,
         let json = config.settingsJSON()
         let js = [
             "window.__applyFacesChaos__   && window.__applyFacesChaos__(\(json));",
+            "window.__applyPollSettings__ && window.__applyPollSettings__(\(json));",
+            "window.__applyToolbarPrefs__ && window.__applyToolbarPrefs__(\(json));",
             "window.__setEmojiTheme__     && window.__setEmojiTheme__('\(safe(config.emojiTheme))');",
             "window.__setAppearance__     && window.__setAppearance__('\(safe(config.appearance))');",
             "window.__setVisualMode__     && window.__setVisualMode__('\(safe(config.visualMode))');",
@@ -194,6 +196,16 @@ final class WebController: NSObject, ObservableObject,
 
     func calm() {
         webView.evaluateJavaScript("window.__calmFaces__ && window.__calmFaces__();", completionHandler: nil)
+    }
+
+    /// Push the request user into the running page (the toolbar pill + request
+    /// header) without a reload. JSON-encodes the name so any characters survive.
+    func pushUser() {
+        let arr = (try? JSONSerialization.data(withJSONObject: [config.user]))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? "[\"unknown\"]"
+        webView.evaluateJavaScript(
+            "window.__setRequestUser__ && window.__setRequestUser__((\(arr))[0]);",
+            completionHandler: nil)
     }
 
     func showDebugPanel() {
@@ -229,11 +241,9 @@ final class WebController: NSObject, ObservableObject,
 
     // Opens the debug data in a separate floating NSPanel.
     func openDebugWindow() {
-        // Serialize current debug entries from the JS side, then open the window.
-        webView.evaluateJavaScript(
-            "(function(){ var d = window.__FACES_DEBUG__; return JSON.stringify(d ? d.entries : []); })()"
-        ) { [weak self] result, _ in
-            let json = (result as? String) ?? "[]"
+        // Serialize current debug entries (+ live rate) from the JS side, then open.
+        webView.evaluateJavaScript(DebugWindowController.snapshotJS) { [weak self] result, _ in
+            let json = (result as? String) ?? "{}"
             DispatchQueue.main.async {
                 self?.showDebugWindowWith(json: json)
             }
@@ -355,11 +365,12 @@ final class WebController: NSObject, ObservableObject,
             if let body = message.body as? [String: Any] {
                 let raw = body["ratePerSec"]
                 let n   = (raw as? Double) ?? Double((raw as? Int) ?? 1)
-                config.funModeRatePerSec = min(20, max(0.5, n))
+                config.funModeRatePerSec = min(config.funRateCap, max(0.5, n))
                 config.save()
-                // Reload so faces.js picks up the new effective paintIntervalMs.
-                let mode = config.visualMode
-                if mode != "classic" && mode != "legacy" { scheduleReload() }
+                // Apply the new poll rate LIVE (no reload) — reloading wipes the
+                // active scene's balloons/rockets/etc. mid-flight. faces.js picks
+                // up the new effective interval via __applyPollSettings__.
+                pushLiveSettings()
             }
             reply(["ok": true])
 
@@ -436,11 +447,12 @@ final class WebController: NSObject, ObservableObject,
 
 // MARK: - Debug window controller
 
-final class DebugWindowController: NSObject, WKNavigationDelegate {
+final class DebugWindowController: NSObject, WKNavigationDelegate, WKScriptMessageHandler, NSWindowDelegate {
     private var panel: NSPanel?
     private var debugWebView: WKWebView?
     private let webDirURL: URL?
     private var refreshTimer: Timer?
+    private weak var mainWebView: WKWebView?
 
     init(webDirURL: URL?) {
         self.webDirURL = webDirURL
@@ -457,9 +469,16 @@ final class DebugWindowController: NSObject, WKNavigationDelegate {
 
     /// Called from Swift side (menu / button) with serialized data.
     func show(initialDataJSON: String, mainWebView: WKWebView) {
+        self.mainWebView = mainWebView
         if debugWebView == nil {
             let cfg = WKWebViewConfiguration()
             cfg.defaultWebpagePreferences.allowsContentJavaScript = true
+            // Panel → Swift bridges: "Clear" empties the main webview's bus;
+            // "refreshDebug" pulls a fresh snapshot on demand (manual Refresh);
+            // "setDebugRate" sets the fun-mode request rate from the panel.
+            cfg.userContentController.add(self, name: "clearDebug")
+            cfg.userContentController.add(self, name: "refreshDebug")
+            cfg.userContentController.add(self, name: "setDebugRate")
             if let dir = webDirURL {
                 cfg.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
                 let wv = WKWebView(frame: .zero, configuration: cfg)
@@ -476,6 +495,30 @@ final class DebugWindowController: NSObject, WKNavigationDelegate {
         startRefresh(source: mainWebView)
     }
 
+    // Panel → Swift bridges.
+    func userContentController(_ ucc: WKUserContentController, didReceive message: WKScriptMessage) {
+        switch message.name {
+        case "clearDebug":
+            // Clear the main webview's bus, then blank the panel.
+            mainWebView?.evaluateJavaScript(
+                "window.__FACES_DEBUG__ && window.__FACES_DEBUG__.clear()", completionHandler: nil)
+            pushData(json: "[]")
+        case "refreshDebug":
+            pullAndPush()   // manual Refresh button — pull a fresh snapshot now
+        case "setDebugRate":
+            // The panel sends a target rate; drive it through the main webview's
+            // rate path (clamps, persists to Swift, applies to every scene).
+            let n = (message.body as? Double) ?? Double((message.body as? Int) ?? 0)
+            if n > 0 {
+                mainWebView?.evaluateJavaScript(
+                    "window.__applyRateFromExternal__ && window.__applyRateFromExternal__(\(n))",
+                    completionHandler: nil)
+            }
+        default:
+            break
+        }
+    }
+
     private func setup(webView: WKWebView) {
         debugWebView = webView
 
@@ -488,6 +531,7 @@ final class DebugWindowController: NSObject, WKNavigationDelegate {
             p.title = "Faces Debug"
             p.contentView = webView
             p.isReleasedWhenClosed = false
+            p.delegate = self        // stop the refresh timer when the panel closes
             p.center()
             panel = p
         } else {
@@ -506,18 +550,36 @@ final class DebugWindowController: NSObject, WKNavigationDelegate {
             completionHandler: nil)
     }
 
-    private func startRefresh(source: WKWebView) {
-        refreshTimer?.invalidate()
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self, weak source] _ in
-            guard let self, let src = source else { return }
-            src.evaluateJavaScript(
-                "(function(){ var d=window.__FACES_DEBUG__; return JSON.stringify(d?d.entries:[]); })()"
-            ) { result, _ in
-                if let json = result as? String {
-                    DispatchQueue.main.async { self.pushData(json: json) }
-                }
+    // JS that serializes a debug snapshot: { entries, rate, max }. Shared so the
+    // initial open and the refresh timer push the same shape (incl. the live rate).
+    static let snapshotJS =
+        "(function(){var d=window.__FACES_DEBUG__;var s=window.__FACES_SETTINGS__||{};" +
+        "return JSON.stringify({entries:d?d.entries:[]," +
+        "rate:Number(s.funModeRatePerSec||s.buoyantRatePerSec)||0.5,max:s.superMode?200:20});})()"
+
+    // Pull the current debug snapshot from the main webview and push it to the panel.
+    private func pullAndPush() {
+        guard let src = mainWebView else { return }
+        src.evaluateJavaScript(DebugWindowController.snapshotJS) { [weak self] result, _ in
+            if let json = result as? String {
+                DispatchQueue.main.async { self?.pushData(json: json) }
             }
         }
+    }
+
+    private func startRefresh(source: WKWebView) {
+        mainWebView = source
+        refreshTimer?.invalidate()
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+            self?.pullAndPush()
+        }
+    }
+
+    // Closing the panel must stop the 1.5s timer — otherwise it keeps evaluating
+    // JS on the main scene webview forever. show() restarts it on reopen.
+    func windowWillClose(_ notification: Notification) {
+        refreshTimer?.invalidate()
+        refreshTimer = nil
     }
 
     deinit { refreshTimer?.invalidate() }

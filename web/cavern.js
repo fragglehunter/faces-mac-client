@@ -35,6 +35,8 @@
   var FALLBACK_EMOJI = "❓";        // ❓
   var DIZZY_EMOJI    = "😵";  // 😵
   var SLEEPY_EMOJI   = "😴";  // 😴
+  var SCARED_EMOJI   = "😱";  // 😱 frozen in terror under the falling boulder
+  var DEAD_EMOJI     = "💀";  // 💀 flattened
 
   var MAX_EXPLORERS = 60;
   var FOOT = 9;   // feet are drawn down to +9 in sprite coords
@@ -166,8 +168,9 @@
       if (visualMode !== "cavern") return;
       // Rate limiter: minimum-interval gate (works for fractional rates like 0.5/s).
       var nowMs = performance.now();
-      while (admittedTimes.length && nowMs - admittedTimes[0] > 1000) admittedTimes.shift();
       var minIntervalMs = 1000 / maxRatePerSec();
+      var horizon = Math.max(1000, minIntervalMs);  // see buoyant.js note
+      while (admittedTimes.length && nowMs - admittedTimes[0] > horizon) admittedTimes.shift();
       if (admittedTimes.length > 0 && nowMs - admittedTimes[admittedTimes.length - 1] < minIntervalMs) return;
       if (admittedTimes.length >= Math.ceil(maxRatePerSec())) return;
       admittedTimes.push(nowMs);
@@ -178,7 +181,7 @@
   function maxRatePerSec() {
     var s = window.__FACES_SETTINGS__ || {};
     var r = Number(s.funModeRatePerSec || s.buoyantRatePerSec);
-    return Number.isFinite(r) ? Math.max(0.5, Math.min(20, r)) : 0.5;
+    return Number.isFinite(r) ? Math.max(0.5, Math.min(200, r)) : 0.5;
   }
 
   function resize() {
@@ -195,8 +198,8 @@
   }
 
   function startCavern() {
+    if (running) return;     // resize() after guard — see buoyant.js start() note
     resize();
-    if (running) return;
     running   = true;
     lastFrame = performance.now();
     raf = requestAnimationFrame(frame);
@@ -223,7 +226,7 @@
         explorers.splice(i, 1);
       }
     }
-    if (hudCounts) hudCounts.textContent = explorers.length + " explorers";
+    if (window.__FACES_STATS__) window.__FACES_STATS__.setActive(explorers.length, "explorers");
   }
 
   // ===================================================================
@@ -239,11 +242,11 @@
     var hasEmoji   = rawEmoji !== FALLBACK_EMOJI;
     var failed     = status === 0 || status === 504 || status === 429 || status >= 500 || parseFail;
     var partial    = !failed && !!(parsed && Array.isArray(parsed.errors) && parsed.errors.length > 0);
-    var thresh     = (window.__FACES_SETTINGS__ && Number(window.__FACES_SETTINGS__.slowThresholdMs)) || 900;
+    var thresh     = (window.__FACES_SETTINGS__ && Number(window.__FACES_SETTINGS__.slowThresholdMs)) || 300;
     var slow       = Number(entry.latencyMs || 0) >= thresh;
 
     var emoji = failed && !hasEmoji
-      ? (status === 504 || status === 0 ? SLEEPY_EMOJI : DIZZY_EMOJI)
+      ? (status === 504 || status === 0 || status === 429 ? SLEEPY_EMOJI : DIZZY_EMOJI)
       : (hasEmoji ? rawEmoji : FALLBACK_EMOJI);
 
     return {
@@ -875,40 +878,19 @@
     o.fx      = st.x;          // freeze the pose where the click landed
     o.fy      = st.y;
     o.fFacing = st.facing;
+    // Terror as the boulder drops; turns into a skull on impact (drawCrushed).
+    o.emoji   = SCARED_EMOJI;
     // Keep the object alive through the whole crush sequence.
     o.duration = (t - o.born) + 3.2;
     bumpCrushCounter();
     o.crushNum = crushCount;   // for the milestone floater
   }
 
-  // Crush scoreboard — a HUD pill that appears on the first crush and keeps
-  // score for the session. (Emoji as HTML entities — ASCII-safe.)
-  function crushTierBadge(n) {
-    if (n >= 100) return "&#x1F451;"; // crown
-    if (n >= 50)  return "&#x1F3C6;"; // trophy
-    if (n >= 25)  return "&#x1F525;"; // fire
-    if (n >= 10)  return "&#x1F3AF;"; // bullseye
-    return "&#x1FAA8;";               // rock
-  }
-
+  // crushCount drives only the in-scene milestone floater; the visible
+  // scoreboard is the shared bottom-right stats HUD (.fhs-score).
   function bumpCrushCounter() {
     crushCount++;
     if (window.__FACES_STATS__) window.__FACES_STATS__.bumpInteraction();
-    if (!crushPill) {
-      var hud = document.querySelector(".cavern-hud");
-      if (!hud) return;
-      crushPill = document.createElement("span");
-      crushPill.id = "cavernCrushes";
-      crushPill.className = "cavern-crush-pill";
-      hud.appendChild(crushPill);
-    }
-    crushPill.innerHTML = crushCount === 1
-      ? crushTierBadge(1) + " First crush!"
-      : crushTierBadge(crushCount) + " " + crushCount + " crushed";
-    // restart the bump animation on every crush
-    crushPill.classList.remove("bump");
-    void crushPill.offsetWidth;
-    crushPill.classList.add("bump");
   }
 
   var ROCK_FALL_S = 0.45;   // boulder drop time
@@ -941,7 +923,8 @@
       ctx.restore();
       drawBadge(sz * 0.72, -(sz * 1.1), "!");
     } else {
-      // Flattened under the boulder.
+      // Flattened under the boulder — a goner.
+      o.emoji = DEAD_EMOJI;
       ctx.save();
       ctx.scale(1.5, 0.3);
       ctx.fillText(o.emoji, 0, -sz * 0.35);
@@ -1034,7 +1017,7 @@
      "Timeout/rate-limit responses send a &#x1F635; (or sleepy &#x1F634;) explorer to a slapstick end.",
      "Settings &#x25B8; Simulator &#x25B8; Face &#x25B8; Max rate (small, e.g. 1 RPS) floods 429s; Latch makes errors stick until calmed."],
     ["&#x23F3;", "Nervous pacing at the cliff", false,
-     "A slow but successful response (latency &#x2265; slow threshold, default 900 ms) hesitates &#x2014; pacing back and forth at the cliff edge before its fate resolves.",
+     "A slow but successful response (latency &#x2265; slow threshold, default 300 ms) hesitates &#x2014; pacing back and forth at the cliff edge before its fate resolves.",
      "Settings &#x25B8; Simulator &#x25B8; any service &#x25B8; Delay at/above the threshold. Tune it in Settings &#x25B8; Display."],
     ["&#x1F3AF;", "Crush an explorer!", false,
      "Click any explorer: it freezes in terror and a boulder flattens it with a dust poof. The scoreboard pill (top right) keeps your crush count &#x2014; badge upgrades at 10, 25, 50, and 100.",

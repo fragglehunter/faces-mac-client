@@ -105,7 +105,7 @@
   let admitted = [];
 
   // Settings
-  let slowMs     = 900;
+  let slowMs     = 300;
   let maxRps     = 0.5;
 
   // Interaction
@@ -211,23 +211,30 @@
     } else if (status===200 && body) {
       if (validHex(body.color)) { out.hasColor = true; out.color = body.color; }
       const em = decodeEmoji(body.smiley);
-      if (em) { out.hasEmoji = true; out.emoji = em; }
+      // Same guard the other modes use: reject status-code strings ("504") and
+      // over-long values so they fall back to ❓ instead of rendering literally.
+      if (em && em.length <= 16 && !/^[0-9]+$/.test(em)) { out.hasEmoji = true; out.emoji = em; }
       if (Array.isArray(body.errors) && body.errors.length) out.partial = true;
       if (body.smiley==="504"||body.color==="504") out.timeout = true;
+    } else {
+      // A 200 with an unparseable body (or any other unexpected status) is a
+      // hard failure — mirror buoyant/cavern/space/garden/fireworks.
+      out.failed = true;
     }
     return out;
   }
 
   function maxRatePerSec() {
     const s = window.__FACES_SETTINGS__ || {};
-    return clamp(0.5, s.funModeRatePerSec || s.buoyantRatePerSec || maxRps, 20);
+    return clamp(Number(s.funModeRatePerSec || s.buoyantRatePerSec || maxRps) || 0.5, 0.5, 200);   // 200 = super-mode ceiling; Swift caps the stored value to 20 unless super mode
   }
 
   // ── Spawn signal ──────────────────────────────────────────────────
   function spawnFromRequest(entry) {
     const nowS = performance.now()/1000;
-    admitted = admitted.filter(function(t){ return nowS-t<1.0; });
     const minIntervalS = 1.0 / maxRatePerSec();
+    const horizonS = Math.max(1.0, minIntervalS);  // see buoyant.js note
+    admitted = admitted.filter(function(t){ return nowS-t < horizonS; });
     if (admitted.length > 0 && nowS - admitted[admitted.length - 1] < minIntervalS) return;
     if (admitted.length >= Math.ceil(maxRatePerSec())) return;
     if (signals.length >= MAX_SIGNALS) return;
@@ -254,6 +261,7 @@
       color:    c.color,
       emoji:    c.emoji,
       kind,
+      slow:     c.slow,   // gates the per-node hover in advanceSignal
       partial:  c.partial,
       alpha:    1.0,
       fadeT:    0,
@@ -557,6 +565,8 @@
     } else {
       ambients = [];
     }
+
+    if (window.__FACES_STATS__) window.__FACES_STATS__.setActive(signals.length, "signals");
   }
 
   // ── Draw ──────────────────────────────────────────────────────────
@@ -911,31 +921,16 @@
       fireCascadeAnim(bestI, 0);
       pulseTotal += score;
       floaters.push({ x: mx, y: my-20, text: "+"+score, alpha:1.0, vy:32 });
-      bumpPulsePill();
+      bumpPulsePill(score);
     }
   }
 
-  function bumpPulsePill() {
-    if (!pulsePill) return;
-    const tiers = [
-      [100, "\u{1F451}"],
-      [50,  "✨"],
-      [30,  "\u{1F30C}"],
-      [15,  "\u{1F4A1}"],
-      [5,   "\u{1F9E0}"],
-    ];
-    let badge = "⚡";
-    for (let i=0; i<tiers.length; i++) {
-      if (pulseTotal >= tiers[i][0]) { badge = tiers[i][1]; break; }
+  // Score lives in the shared bottom-right stats HUD (.fhs-score); a click can
+  // light multiple nodes, so each lit node counts toward the score.
+  function bumpPulsePill(score) {
+    if (window.__FACES_STATS__) {
+      for (var i = 0; i < Math.max(1, score | 0); i++) window.__FACES_STATS__.bumpInteraction();
     }
-    pulsePill.style.display = "inline-block";
-    pulsePill.textContent = pulseTotal === 0
-      ? "⚡ First pulse!"
-      : badge + " " + pulseTotal + " pulse" + (pulseTotal!==1?"s":"");
-    pulsePill.classList.remove("bk-bump");
-    void pulsePill.offsetWidth;
-    pulsePill.classList.add("bk-bump");
-    if (window.__FACES_STATS__) window.__FACES_STATS__.bumpInteraction();
   }
 
   // ── Resize ────────────────────────────────────────────────────────
@@ -954,7 +949,9 @@
     window.__FACES_DEBUG__.subscribe(function(entry) {
       if (visualMode !== "claude") return;
       spawnFromRequest(entry);
-      if (window.__FACES_STATS__) window.__FACES_STATS__.record(entry);
+      // NB: stats.js auto-subscribes to the debug bus itself, so the scene must
+      // NOT also forward entries (there is no __FACES_STATS__.record — that call
+      // threw on every signal and would have double-counted if it existed).
     });
   }
 
@@ -1033,16 +1030,12 @@
       canvas.style.cursor = overNode ? "pointer" : "default";
     });
 
-    // Stats HUD
-    var hud = root.querySelector(".claude-hud");
-    if (hud && window.__FACES_STATS__) window.__FACES_STATS__.attachHUD(hud);
-
-    // Pulse pill (lazy)
-    if (hud) {
-      pulsePill = document.createElement("span");
-      pulsePill.className = "claude-hud-pill";
-      pulsePill.style.display = "none";
-      hud.appendChild(pulsePill);
+    // Shared stats HUD — bottom-right cluster, identical to every other mode.
+    if (window.__FACES_STATS__) {
+      var statsEl = document.createElement("div");
+      statsEl.className = "fun-stats-hud";
+      root.appendChild(statsEl);
+      window.__FACES_STATS__.attachHUD(statsEl);
     }
 
     subscribeDebug();
@@ -1052,8 +1045,8 @@
 
   function applySettings() {
     var s = window.__FACES_SETTINGS__ || {};
-    slowMs  = s.slowThresholdMs || 900;
-    maxRps  = clamp(0.5, s.funModeRatePerSec || s.buoyantRatePerSec || 0.5, 20);
+    slowMs  = s.slowThresholdMs || 300;
+    maxRps  = clamp(Number(s.funModeRatePerSec || s.buoyantRatePerSec || 0.5) || 0.5, 0.5, 200);   // 200 = super-mode ceiling; Swift caps the stored value to 20 unless super mode
   }
 
   // ── Public hooks ──────────────────────────────────────────────────
@@ -1071,8 +1064,8 @@
 
   window.__applyClaudeSettings__ = function(json) {
     var s = (typeof json==="string") ? (safeJson(json)||{}) : (json||{});
-    slowMs = s.slowThresholdMs || 900;
-    maxRps = clamp(0.5, s.funModeRatePerSec || s.buoyantRatePerSec || 0.5, 20);
+    slowMs = s.slowThresholdMs || 300;
+    maxRps = clamp(Number(s.funModeRatePerSec || s.buoyantRatePerSec || 0.5) || 0.5, 0.5, 200);   // 200 = super-mode ceiling; Swift caps the stored value to 20 unless super mode
     if (window.__syncRateControl__) window.__syncRateControl__(maxRps);
   };
 

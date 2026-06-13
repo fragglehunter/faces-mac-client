@@ -19,6 +19,7 @@
   var FALLBACK_EMOJI  = "❓";        // ❓
   var DIZZY_EMOJI     = "😵";  // 😵
   var SLEEPY_EMOJI    = "😴";  // 😴
+  var DEAD_EMOJI      = "💀";  // 💀 pilot is done for once the rocket is shot down
   var FALLBACK_COLOR  = "#8b8fa8";       // silver-grey for missing color
 
   var MAX_ROCKETS    = 80;
@@ -134,8 +135,9 @@
       if (visualMode !== "space") return;
       // Rate limiter: minimum-interval gate (works for fractional rates like 0.5/s).
       var nowMs = performance.now();
-      while (admittedTimes.length && nowMs - admittedTimes[0] > 1000) admittedTimes.shift();
       var minIntervalMs = 1000 / maxRatePerSec();
+      var horizon = Math.max(1000, minIntervalMs);  // see buoyant.js note
+      while (admittedTimes.length && nowMs - admittedTimes[0] > horizon) admittedTimes.shift();
       if (admittedTimes.length > 0 && nowMs - admittedTimes[admittedTimes.length - 1] < minIntervalMs) return;
       if (admittedTimes.length >= Math.ceil(maxRatePerSec())) return;
       admittedTimes.push(nowMs);
@@ -146,7 +148,7 @@
   function maxRatePerSec() {
     var s = window.__FACES_SETTINGS__ || {};
     var r = Number(s.funModeRatePerSec || s.buoyantRatePerSec);
-    return Number.isFinite(r) ? Math.max(0.5, Math.min(20, r)) : 0.5;
+    return Number.isFinite(r) ? Math.max(0.5, Math.min(200, r)) : 0.5;
   }
 
   function generateStars(count) {
@@ -176,8 +178,8 @@
   }
 
   function startSpace() {
+    if (running) return;     // resize() after guard — see buoyant.js start() note
     resize();
-    if (running) return;
     running   = true;
     lastFrame = performance.now();
     raf = requestAnimationFrame(frame);
@@ -211,7 +213,7 @@
     var hasEmoji  = rawEmoji !== FALLBACK_EMOJI;
     var failed    = status === 0 || status === 504 || status === 429 || status >= 500 || parseFail;
     var partial   = !failed && !!(parsed && Array.isArray(parsed.errors) && parsed.errors.length > 0);
-    var thresh    = Number((window.__FACES_SETTINGS__ || {}).slowThresholdMs) || 900;
+    var thresh    = Number((window.__FACES_SETTINGS__ || {}).slowThresholdMs) || 300;
     var slow      = Number(entry.latencyMs || 0) >= thresh;
     var timeout   = (status === 429 || status === 504 || status === 0);
 
@@ -343,7 +345,7 @@
     for (var j = asteroids.length - 1; j >= 0; j--) {
       if ((t - asteroids[j].born) / asteroids[j].duration > 1) asteroids.splice(j, 1);
     }
-    if (hudCounts) hudCounts.textContent = rockets.length + " missions";
+    if (window.__FACES_STATS__) window.__FACES_STATS__.setActive(rockets.length, "missions");
   }
 
   // ===================================================================
@@ -859,6 +861,8 @@
     r.blastScale = pose.scale;
     r.blastAngle = pose.angle;
     r.duration   = (t - r.born) + 3.2;
+    // Shot out of the sky — the pilot tumbling in the wreckage is now a goner.
+    r.emoji      = DEAD_EMOJI;
     // Alien ship swoops in from the red planet area and fires a green laser.
     // IMPORTANT: alienPos() can be off-screen (cover-crop clips the left edge),
     // so clamp to always-visible coords so the ship is never invisible.
@@ -954,31 +958,11 @@
   // Blast scoreboard (mirrors Buoyant pop-pill / Cavern crush-pill)
   // ===================================================================
 
-  function blastTierBadge(n) {
-    if (n >= 100) return "&#x1F451;"; // 👑 crown
-    if (n >= 50)  return "&#x1F3C6;"; // 🏆 trophy
-    if (n >= 25)  return "&#x26A1;";  // ⚡ lightning
-    if (n >= 10)  return "&#x1F3AF;"; // 🎯 bullseye
-    return "&#x1F680;";               // 🚀 rocket
-  }
-
+  // blastCount drives only the in-scene milestone floater; the scoreboard is the
+  // shared bottom-right stats HUD (.fhs-score).
   function bumpBlastCounter() {
     blastCount++;
     if (window.__FACES_STATS__) window.__FACES_STATS__.bumpInteraction();
-    if (!blastPill) {
-      var hud = document.querySelector(".space-hud");
-      if (!hud) return;
-      blastPill = document.createElement("span");
-      blastPill.id = "spaceBlasts";
-      blastPill.className = "space-blast-pill";
-      hud.appendChild(blastPill);
-    }
-    blastPill.innerHTML = blastCount === 1
-      ? blastTierBadge(1) + " First blast!"
-      : blastTierBadge(blastCount) + " " + blastCount + " blasted";
-    blastPill.classList.remove("bump");
-    void blastPill.offsetWidth;
-    blastPill.classList.add("bump");
   }
 
   // ===================================================================
@@ -1008,7 +992,7 @@
      "Rate-limit or timeout (429/504): the rocket barely leaves Earth before losing power and falling back. Pilot shows &#x1F634; or &#x1F635;.",
      "Settings &#x25B8; Simulator &#x25B8; Face &#x25B8; Max rate (small, e.g. 1 RPS), or Latch for sticky 599s."],
     ["&#x23F3;", "Slow rocket", false,
-     "A successful but slow response (latency &#x2265; threshold, default 900 ms) takes a visibly longer arc to the Moon.",
+     "A successful but slow response (latency &#x2265; threshold, default 300 ms) takes a visibly longer arc to the Moon.",
      "Settings &#x25B8; Simulator &#x25B8; any service &#x25B8; Delay at/above the slow threshold."],
     ["&#x2604;&#xFE0F;", "Asteroids", false,
      "Failed requests spawn tumbling asteroids that drift across the scene and fade. The sky clears as errors stop.",
