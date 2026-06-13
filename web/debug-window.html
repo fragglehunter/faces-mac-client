@@ -39,6 +39,9 @@ body {
   padding: 4px 10px;
 }
 .dw-header button:hover { background: #4a4a4c; }
+.dw-actions { display: flex; gap: 8px; }
+#dw-clear { border-color: #5a3a3c; }
+#dw-clear:hover { background: #5a2c2e; }
 
 /* ── Overview bar ───────────────────────────────────────────────────── */
 .dw-overview {
@@ -93,6 +96,8 @@ body {
   padding: 3px 8px;
   width: 60px;
 }
+.dw-rate input[type="range"] { width: 110px; accent-color: #0a84ff; cursor: pointer; vertical-align: middle; }
+#dw-rate-val { display: inline-block; min-width: 38px; text-align: right; font-variant-numeric: tabular-nums; color: #0a84ff; font-weight: 600; }
 .dw-auto-badge {
   font-size: 11px;
   color: #30d158;
@@ -170,13 +175,21 @@ tbody td {
     <strong>Faces Debug</strong>
     <small id="dw-summary">loading…</small>
   </div>
-  <button id="dw-refresh">&#x21BB; Refresh</button>
+  <div class="dw-actions">
+    <button id="dw-clear" title="Clear all captured requests and start fresh">&#x1F5D1; Clear</button>
+    <button id="dw-refresh">&#x21BB; Refresh</button>
+  </div>
 </div>
 <div class="dw-overview" id="dw-overview"></div>
 <div class="dw-toolbar">
   <label>
     Max rows
     <input type="text" id="dw-limit" value="300">
+  </label>
+  <label class="dw-rate" title="Fun-mode request rate (events/sec admitted to the scene). Applies to the live app.">
+    Rate
+    <input type="range" id="dw-rate" min="0" max="1" step="0.01" value="0">
+    <span id="dw-rate-val">—</span>
   </label>
   <span class="dw-auto-badge">Auto-refresh 1.5s</span>
 </div>
@@ -207,6 +220,38 @@ var summaryEl = document.getElementById("dw-summary");
 var overviewEl = document.getElementById("dw-overview");
 var tbody    = document.getElementById("dw-tbody");
 var detailEl = document.getElementById("dw-detail");
+
+// ── RPS control ──────────────────────────────────────────────────────────────
+// Mirrors the toolbar slider's log scale. Drives the live app's fun-mode rate
+// through Swift (messageHandlers.setDebugRate → __applyRateFromExternal__).
+var rateEl    = document.getElementById("dw-rate");
+var rateValEl = document.getElementById("dw-rate-val");
+var rateCap   = 20;            // updated from each snapshot (200 in super mode)
+var LOG_MIN   = Math.log2(0.5);
+function logMax()       { return Math.log2(rateCap); }
+function sliderToRate(p){ return Math.max(0.5, Math.min(rateCap, Math.pow(2, LOG_MIN + p * (logMax() - LOG_MIN)))); }
+function rateToSlider(r){ return (Math.log2(Math.max(0.5, r)) - LOG_MIN) / (logMax() - LOG_MIN); }
+function fmtRate(r) {
+  if (r < 1)  return "1/" + Math.round(1 / r) + "s";
+  if (r >= 10) return Math.round(r) + "/s";
+  return (Math.round(r * 10) / 10) + "/s";
+}
+function setRateInfo(rate, max) {
+  if (typeof max === "number" && max > 0) rateCap = max;
+  // Don't yank the slider out from under an active drag.
+  if (document.activeElement === rateEl) return;
+  rateEl.value = rateToSlider(rate);
+  rateValEl.textContent = fmtRate(rate);
+}
+rateEl.addEventListener("input", function () {
+  rateValEl.textContent = fmtRate(sliderToRate(parseFloat(rateEl.value)));
+});
+rateEl.addEventListener("change", function () {
+  var r = sliderToRate(parseFloat(rateEl.value));
+  rateValEl.textContent = fmtRate(r);
+  var mh = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.setDebugRate;
+  if (mh) { try { mh.postMessage(r); } catch (e) {} }
+});
 
 function esc(s) {
   return String(s == null ? "" : s)
@@ -301,16 +346,45 @@ tbody.addEventListener("click", function(e) {
 
 document.getElementById("dw-refresh").addEventListener("click", refresh);
 
-// Swift calls this with serialized JSON string of all entries.
+// Clear: tell the native app to clear the main webview's debug bus (it will push
+// an empty snapshot straight back); also blank the panel immediately for feedback.
+document.getElementById("dw-clear").addEventListener("click", function () {
+  var mh = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.clearDebug;
+  if (mh) { try { mh.postMessage(""); } catch (e) {} }
+  entries = []; selected = null;
+  detailEl.textContent = "Select a row for details.";
+  render();
+});
+
+// Swift calls this with a serialized snapshot. New shape: { entries, rate, max }.
+// A bare array is still accepted for backward compatibility.
 window.__refresh__ = function(jsonStr) {
-  try { entries = JSON.parse(jsonStr) || []; } catch(_) { return; }
+  var parsed;
+  try { parsed = JSON.parse(jsonStr); } catch(_) { return; }
+  if (Array.isArray(parsed)) {
+    entries = parsed || [];
+  } else if (parsed && typeof parsed === "object") {
+    entries = parsed.entries || [];
+    if (typeof parsed.rate === "number") setRateInfo(parsed.rate, parsed.max);
+  } else {
+    return;
+  }
+  // Drop a stale selection (e.g. after Clear) so the detail pane doesn't keep
+  // showing a request that no longer exists.
+  if (selected != null && !entries.some(function(e){ return e.id === selected; })) {
+    selected = null;
+    detailEl.textContent = "Select a row for details.";
+  }
   render();
 };
 
 function refresh() {
-  var mh = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.getDebugEntries;
-  if (mh) {
-    mh.postMessage({}).then(function(json) {
+  var mh = window.webkit && window.webkit.messageHandlers;
+  // Native panel: ask Swift to pull a fresh snapshot (it pushes back via __refresh__).
+  if (mh && mh.refreshDebug) { try { mh.refreshDebug.postMessage(""); } catch (e) {} return; }
+  // Browser fallback: reply-style getDebugEntries if the host provides it.
+  if (mh && mh.getDebugEntries) {
+    mh.getDebugEntries.postMessage({}).then(function(json) {
       try { entries = JSON.parse(json) || []; } catch(_) {}
       render();
     }).catch(function(){});
