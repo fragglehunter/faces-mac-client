@@ -63,6 +63,25 @@ struct FacesApp: App {
                 }
                 .keyboardShortcut("d", modifiers: [.command, .option])
             }
+
+            // Visualization modes, switchable with ⌘1…⌘8 (in dropdown order).
+            // The active mode shows a checkmark; switching is live (no reload).
+            CommandMenu("Mode") {
+                ForEach(FacesData.modes.indices, id: \.self) { idx in
+                    let mode = FacesData.modes[idx]
+                    Button(action: { selectMode(mode.id) }) {
+                        // Leading checkmark marks the current mode (plain space keeps alignment).
+                        Text((config.visualMode == mode.id ? "✓ " : "   ") + mode.label)
+                    }
+                    .keyboardShortcut(KeyEquivalent(Character("\(idx + 1)")), modifiers: .command)
+                }
+            }
         }
+    }
+
+    private func selectMode(_ id: String) {
+        config.visualMode = id
+        config.save()
+        controller.pushLiveSettings()   // live switch — no reload
     }
 }
