@@ -372,7 +372,7 @@
     showPods: false,
     paintIntervalMs: 2000,
     visualMode: "classic",
-    slowThresholdMs: 900,
+    slowThresholdMs: 300,
     persistFaces: true,
   };
 
