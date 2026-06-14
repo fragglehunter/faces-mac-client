@@ -5,24 +5,31 @@
  *
  * SPDX-License-Identifier: Apache-2.0 */
 
-/* Container: column of pills bottom-right, wrapping if many are active */
+/* Container: column of pills bottom-right.
+ * The HUD scales with the window: a clamp()ed, viewport-relative font-size is
+ * set here and every inner dimension (pill padding, gaps, label size) is in em,
+ * so the whole cluster grows/shrinks as the app window is resized. 1.9vmin ≈
+ * 17px at a ~900px-tall window (the previous fixed size), clamped 12–22px. */
 .fun-stats-hud {
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  max-width: 480px;
+  gap: 0.42em;
+  max-width: 80vw;
   align-items: flex-end;
   pointer-events: none;
+  font-size: clamp(12px, 1.9vmin, 22px);
 }
 
-/* Individual stat pill — ~2× larger than before */
+/* Individual stat pill — sizes are em-relative to the scalable container. */
 .fhs {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 8px 16px;
+  gap: 0.42em;
+  padding: 0.47em 0.95em;
   border-radius: 999px;
-  font: 700 17px -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  font-weight: 700;
+  font-size: 1em;
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
   -webkit-backdrop-filter: blur(14px) saturate(200%);
   backdrop-filter: blur(14px) saturate(200%);
   border: 1.5px solid rgba(255,255,255,0.35);
@@ -53,7 +60,7 @@
   background: rgba(255,218,20,0.92);
   color: #3a2000;
   border-color: rgba(255,255,255,0.65);
-  font-size: 18px;
+  font-size: 1.06em;   /* slightly larger than the other pills; scales with them */
   animation: fhs-in 0.25s ease, fhs-score-bump 0.35s ease;
 }
 
@@ -67,9 +74,19 @@
   animation: fhs-score-bump 0.30s ease;
 }
 
-/* Stats are consolidated into the single bottom-right .fun-stats-hud cluster
- * (stats.js). The legacy per-mode top-right HUDs (mode label + live count +
- * per-mode score pill) are retired for a uniform layout across every mode. */
+/* Per-mode placement: Buoyant & Cavern show the stats in the TOP-right; every
+ * other mode keeps the default bottom-right (skin.css). The id selector outranks
+ * the shared .fun-stats-hud class so only top/bottom are overridden. top:46px
+ * clears the title-bar drag strip and sits beside the centered toolbar. */
+#buoyant-root .fun-stats-hud,
+#cavern-root  .fun-stats-hud {
+  top: 46px;
+  bottom: auto;
+}
+
+/* Stats are consolidated into the single .fun-stats-hud cluster (stats.js).
+ * The legacy per-mode top-right HUDs (mode label + live count + per-mode score
+ * pill) are retired for a uniform layout across every mode. */
 .buoyant-hud,
 .cavern-hud,
 .space-hud,
@@ -83,7 +100,7 @@
 .fhs-i { display: inline; }
 .fhs-v { display: inline; }
 .fhs-l {
-  font-size: 11px;
+  font-size: 0.64em;   /* em-relative so labels scale with the pill */
   font-weight: 500;
   opacity: 0.72;
   letter-spacing: 0.2px;

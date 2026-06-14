@@ -47,6 +47,8 @@ enum FacesData {
         ("garden",  "Garden",  "leaf"),
         ("claude",  "Claude",  "brain"),
         ("fireworks", "Fireworks", "sparkles"),
+        ("snake",   "Snake Duel",      "gamecontroller"),
+        ("derby",   "Grand Prix", "flag.checkered"),
     ]
 }
 
@@ -81,6 +83,8 @@ final class FacesConfig: ObservableObject {
     /// Grid modes (legacy/classic): keep each cell's last face on screen until a
     /// new response replaces it, instead of fading out by age.
     @Published var persistFaces: Bool = true
+    /// Grid modes (legacy/classic): briefly pulse a cell when it repaints, so updates are easy to spot.
+    @Published var cellPulse: Bool = true
     @Published var user: String = "unknown"
     /// Toolbar buttons that are also reachable from the macOS menu bar, so they
     /// can be hidden from the in-web toolbar to declutter it.
@@ -141,6 +145,7 @@ final class FacesConfig: ObservableObject {
             "hideKey":           hideKey,
             "showPods":          showPods,
             "persistFaces":      persistFaces,
+            "cellPulse":         cellPulse,
             "paintIntervalMs":   effectivePaintIntervalMs,
             "user":              user,
             "showDebugButton":    showDebugButton,
@@ -189,6 +194,7 @@ final class FacesConfig: ObservableObject {
         var hideKey: Bool
         var showPods: Bool
         var persistFaces: Bool?
+        var cellPulse: Bool?
         var paintIntervalMs: Int?
         var user: String
         var showDebugButton: Bool?
@@ -218,7 +224,7 @@ final class FacesConfig: ObservableObject {
             adminShowDebugPage: adminShowDebugPage,
             numRows: numRows, numCols: numCols, edgeSize: edgeSize,
             startActive: startActive, hideKey: hideKey, showPods: showPods,
-            persistFaces: persistFaces,
+            persistFaces: persistFaces, cellPulse: cellPulse,
             paintIntervalMs: paintIntervalMs, user: user,
             showDebugButton: showDebugButton, showSettingsButton: showSettingsButton,
             emojiTheme: emojiTheme, appearance: appearance,
@@ -260,6 +266,7 @@ final class FacesConfig: ObservableObject {
         hideKey        = p.hideKey
         showPods       = p.showPods
         persistFaces   = p.persistFaces ?? true
+        cellPulse      = p.cellPulse ?? true
         paintIntervalMs = p.paintIntervalMs ?? 2000
         user           = p.user
         showDebugButton    = p.showDebugButton ?? true
@@ -317,6 +324,7 @@ final class FacesConfig: ObservableObject {
         numRows = 4; numCols = 4; edgeSize = 1
         startActive = true; hideKey = true; showPods = false
         persistFaces = true
+        cellPulse = true
         paintIntervalMs  = 2000
         user             = "unknown"
         showDebugButton    = true

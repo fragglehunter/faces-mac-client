@@ -184,12 +184,16 @@ final class WebController: NSObject, ObservableObject,
             "window.__setEmojiTheme__     && window.__setEmojiTheme__('\(safe(config.emojiTheme))');",
             "window.__setAppearance__     && window.__setAppearance__('\(safe(config.appearance))');",
             "window.__setVisualMode__     && window.__setVisualMode__('\(safe(config.visualMode))');",
+            // After the mode is applied (body classes set), enforce legend visibility for grid modes.
+            "window.__applyLegendSettings__ && window.__applyLegendSettings__(\(json));",
             "window.__applyBuoyantSettings__  && window.__applyBuoyantSettings__(\(json));",
             "window.__applyCavernSettings__   && window.__applyCavernSettings__(\(json));",
             "window.__applySpaceSettings__    && window.__applySpaceSettings__(\(json));",
             "window.__applyGardenSettings__   && window.__applyGardenSettings__(\(json));",
             "window.__applyClaudeSettings__   && window.__applyClaudeSettings__(\(json));",
             "window.__applyFireworksSettings__ && window.__applyFireworksSettings__(\(json));",
+            "window.__applySnakeSettings__ && window.__applySnakeSettings__(\(json));",
+            "window.__applyDerbySettings__ && window.__applyDerbySettings__(\(json));",
         ].joined(separator: "\n")
         webView.evaluateJavaScript(js, completionHandler: nil)
     }
@@ -355,9 +359,14 @@ final class WebController: NSObject, ObservableObject,
         case "setVisualMode":
             if let body = message.body as? [String: Any] {
                 let next    = (body["visualMode"] as? String) ?? "classic"
-                let allowed = ["classic", "legacy", "buoyant", "cavern", "space", "garden", "claude", "fireworks"]
+                let allowed = ["classic", "legacy", "buoyant", "cavern", "space", "garden", "claude", "fireworks", "snake", "derby"]
                 config.visualMode = allowed.contains(next) ? next : "classic"
                 config.save()
+                // Re-apply live settings so the actual request/poll rate matches the new
+                // mode immediately (fun/game modes derive the poll interval from
+                // funModeRatePerSec). Without this, switching via the web dropdown keeps
+                // the previous mode's rate and can flood the network.
+                pushLiveSettings()
             }
             reply(["ok": true])
 

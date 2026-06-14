@@ -34,7 +34,7 @@
 
   <Title>Faces</Title>
 
-  <link rel="stylesheet" href="faces.css">
+  <link rel="stylesheet" href="faces.css?v=41">
   <link rel="stylesheet" href="theme.css">
   <link rel="stylesheet" href="buoyant.css?v=27">
   <link rel="stylesheet" href="cavern.css?v=27">
@@ -42,11 +42,13 @@
   <link rel="stylesheet" href="garden.css?v=27">
   <link rel="stylesheet" href="claude.css?v=27">
   <link rel="stylesheet" href="fireworks.css?v=30">
+  <link rel="stylesheet" href="snake.css?v=34">
+  <link rel="stylesheet" href="derby.css?v=34">
   <!-- skin.css restyles the chrome (card/toolbar/buttons) to feel macOS-native
        and defines the selectable appearances; loaded last so it can override. -->
   <link rel="stylesheet" href="skin.css?v=29">
   <!-- stats.css — unified HUD pills for all fun modes -->
-  <link rel="stylesheet" href="stats.css?v=33">
+  <link rel="stylesheet" href="stats.css?v=43">
 </HEAD>
 
 <!-- The appearance class is set live from Settings by sim.js (skin-system default). -->
@@ -70,6 +72,8 @@
           <option value="garden">Garden</option>
           <option value="claude">Claude &#x2736;</option>
           <option value="fireworks">Fireworks</option>
+          <option value="snake">Snake Duel</option>
+          <option value="derby">Grand Prix</option>
         </select>
       </label>
       <div id="userDiv" class="inline">
@@ -160,6 +164,15 @@
     </div>
   </div>
 
+  <!-- snake-root / derby-root: interactive keyboard game modes (procedural; HUD drawn on canvas) -->
+  <div id="snake-root" class="snake-root" aria-label="Tint Snake Duel game">
+    <canvas id="snake-canvas"></canvas>
+  </div>
+
+  <div id="derby-root" class="derby-root" aria-label="Slipstream Derby game">
+    <canvas id="derby-canvas"></canvas>
+  </div>
+
   <footer class="site-footer">
     &copy; <span id="copyright-year"></span> Buoyant Inc.
   </footer>
@@ -181,17 +194,21 @@
   }
   </script>
   <script src="sim.js?v=33"></script>
-  <script src="faces.js?v=33"></script>
+  <script src="faces.js?v=42"></script>
   <script src="theme.js?v=27"></script>
   <script src="layout.js?v=28"></script>
   <!-- stats.js must load before scene scripts so __FACES_STATS__ is defined -->
   <script src="stats.js?v=34"></script>
+  <!-- gamecore.js: shared engine for the game modes; must load before snake/derby -->
+  <script src="gamecore.js?v=35"></script>
   <script src="buoyant.js?v=34"></script>
   <script src="cavern.js?v=34"></script>
   <script src="space.js?v=34"></script>
   <script src="garden.js?v=34"></script>
   <script src="claude.js?v=34"></script>
   <script src="fireworks.js?v=34"></script>
+  <script src="snake.js?v=42"></script>
+  <script src="derby.js?v=41"></script>
   <script src="toolbar.js?v=34"></script>
   <script src="debug.js?v=27"></script>
 </BODY>

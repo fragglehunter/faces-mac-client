@@ -69,6 +69,17 @@ let CELL_INTERVAL = Math.floor(PAINT_INTERVAL_MS / (NUM_ROWS * NUM_COLS))
 // the scene intact. Updated by window.__applyPollSettings__ (called from Swift).
 let EFFECTIVE_INTERVAL = PAINT_INTERVAL_MS;
 
+// Cell pulse: briefly highlight a grid cell when it repaints (legacy/classic
+// grid modes), so updates are easy to spot. Toggleable live via
+// __applyPollSettings__; defaults on.
+let CELL_PULSE = (CONFIG && CONFIG.cellPulse) !== false;
+function pulseCell(el) {
+    if (!CELL_PULSE || !el) return;
+    el.classList.remove("cell-pulse");
+    void el.offsetWidth;            // force reflow so the animation restarts on every repaint
+    el.classList.add("cell-pulse");
+}
+
 // faces-gui-mac-app: when true, a cell keeps its last face at full opacity
 // until a new response replaces it, instead of fading out by age (the classic
 // "freshness" fade). Sourced from Settings -> "Keep faces until replaced".
@@ -598,6 +609,7 @@ class Cell {
                     }
 
                     $(`cell-${this.row}-${this.col}`).style.opacity = 1.0
+                    pulseCell($(`cell-${this.row}-${this.col}`))
                 }, 50)
             }
 
@@ -625,6 +637,7 @@ class Cell {
                 $(`cell-${this.row}-${this.col}`).style.opacity = 1.0
                 $(`cell-${this.row}-${this.col}`).style.background = Cell.colors.purple
                 $(`cell-${this.row}-${this.col}`).style.borderColor = "grey"
+                pulseCell($(`cell-${this.row}-${this.col}`))
             }, 50)
 
             this.reschedule(latency)
@@ -1042,10 +1055,42 @@ window.__applyPollSettings__ = function (json) {
         const s = typeof json === "string" ? JSON.parse(json) : (json || {});
         const ms = Number(s.paintIntervalMs);
         if (isFinite(ms) && ms > 0) EFFECTIVE_INTERVAL = Math.max(20, Math.round(ms));
+        if (typeof s.cellPulse !== "undefined") CELL_PULSE = !!s.cellPulse;
         return true;
     } catch (e) {
         return false;
     }
+};
+
+// Live legend visibility for the GRID modes. Enforces the legend column
+// (#column3) + Show-Key button per the hideKey setting and the active mode, so
+// it works without a reload. Modern/classic: hidden by default (hideKey), shown
+// inline when hideKey is off. Legacy: always shows its inline legend. Fun/game
+// modes: no grid legend. Called from pushLiveSettings AFTER __setVisualMode__.
+window.__applyLegendSettings__ = function (json) {
+    let s;
+    try { s = typeof json === "string" ? JSON.parse(json) : (json || {}); } catch (e) { s = {}; }
+    const hideKey = !!s.hideKey;
+    const body = document.body;
+    const col3 = document.getElementById("column3");
+    const btn = document.getElementById("btnShowKey");
+    if (!col3) return true;
+
+    if (body.classList.contains("visual-fun")) {
+        col3.style.display = "none";                 // canvas scenes have their own keys
+    } else if (body.classList.contains("visual-legacy")) {
+        col3.style.display = "";                     // legacy always shows its inline legend
+        if (btn) btn.style.display = "none";
+    } else {                                          // classic / Modern
+        col3.style.display = hideKey ? "none" : "";
+        if (btn) btn.style.display = hideKey ? "inline-block" : "none";
+        if (!hideKey) {
+            const keyEl = document.getElementById("key");
+            if (keyEl && keyEl.children.length === 0) new Key(keyEl);   // (re)build inline legend
+        }
+    }
+    if (typeof updateWrapperMax === "function") updateWrapperMax();
+    return true;
 };
 
 // Initialize when DOM is ready

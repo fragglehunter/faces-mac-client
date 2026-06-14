@@ -160,6 +160,8 @@ private struct GridTab: View {
                             .help("Show the per-pod status column alongside the grid.")
                         ToggleRow("Keep faces until replaced", isOn: $config.persistFaces)
                             .help("Each cell keeps its last face on screen until a new response replaces it, instead of fading out.")
+                        ToggleRow("Pulse on update", isOn: $config.cellPulse)
+                            .help("Briefly highlight each grid cell when it gets a new face, so updates are easy to spot.")
                         if !isLegacy {
                             ToggleRow("Hide legend", isOn: $config.hideKey)
                                 .help("Hide the legend — a 'Show Key' button appears to reveal it on demand.")
@@ -236,8 +238,11 @@ private struct GridTab: View {
         .onChange(of: config.edgeSize)          { _ in reload() }
         .onChange(of: config.startActive)       { _ in reload() }
         .onChange(of: config.showPods)          { _ in reload() }
-        .onChange(of: config.hideKey)           { _ in reload() }
+        // Legend visibility applies live (faces.js __applyLegendSettings__) — no reload.
+        .onChange(of: config.hideKey)           { _ in config.save(); controller.pushLiveSettings() }
         .onChange(of: config.persistFaces)      { _ in reload() }
+        // Pulse toggle applies live (no reload needed — faces.js reads it via __applyPollSettings__).
+        .onChange(of: config.cellPulse)         { _ in config.save(); controller.pushLiveSettings() }
         // Rate changes apply live (pushLiveSettings → __applyPollSettings__);
         // reloading would wipe the active fun-mode scene mid-flight.
         .onChange(of: config.paintIntervalMs)   { _ in config.save(); controller.pushLiveSettings() }
@@ -274,6 +279,8 @@ private struct GridTab: View {
         case "garden":  return "Flowers/sec"
         case "claude":  return "Signals/sec"
         case "fireworks": return "Fireworks/sec"
+        case "snake":   return "Pellets/sec"
+        case "derby":   return "Boosts/sec"
         default:        return "Scene rate"
         }
     }

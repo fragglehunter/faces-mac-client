@@ -1,0 +1,85 @@
+/* snake.css — TINT SNAKE DUEL shell. Shared body.visual-fun chrome lives in
+ * skin.css; the game draws its own HUD on the canvas. SPDX-License-Identifier: Apache-2.0 */
+
+.snake-root {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: #0a0e1a;
+  display: none;
+  overflow: hidden;
+}
+
+body.visual-snake .snake-root { display: block; }
+
+#snake-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: default;
+}
+
+/* Key popup */
+.snake-key-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 10, 0.65);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.snake-key-overlay.open { display: flex; }
+
+.snake-key-card {
+  width: min(620px, calc(100vw - 60px));
+  max-height: 82vh;
+  overflow-y: auto;
+  background: rgba(8, 10, 28, 0.97);
+  border: 1px solid rgba(100, 200, 140, 0.3);
+  border-radius: 16px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.7);
+  padding: 18px 22px 22px;
+  color: #c0d0ff;
+  font: 13px -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.snake-key-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.snake-key-header h2 { margin: 0; font-size: 16px; color: #b6f0c8; }
+
+.snake-key-close {
+  border: 0;
+  background: transparent;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  color: #6cc78a;
+  padding: 2px 6px;
+}
+
+.snake-key-close:hover { color: #a0e8b8; }
+
+.sgk-intro { margin: 4px 0 12px; color: #8fb89a; line-height: 1.45; }
+.sgk-intro b { color: #d6ffe2; font-weight: 600; }
+
+.sgk-row {
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  line-height: 1.4;
+}
+
+.sgk-icon { font-size: 22px; text-align: center; }
+.sgk-title { font-weight: 700; color: #e6ffec; }
+.sgk-desc { opacity: 0.85; margin-top: 2px; }

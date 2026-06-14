@@ -68,6 +68,18 @@ h1 {
     position: relative;
 }
 
+/* Pulse on repaint: a quick scale-up + glow so it's obvious a cell just updated.
+   Added/removed by faces.js (pulseCell), gated by the "Pulse on update" setting. */
+@keyframes cell-pulse {
+    0%   { transform: scale(1);    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
+    35%  { transform: scale(1.09); box-shadow: 0 0 18px 6px rgba(255, 255, 255, 0.6); }
+    100% { transform: scale(1);    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
+}
+.cell.cell-pulse {
+    animation: cell-pulse 0.45s ease-out;
+    z-index: 5;   /* rise above neighbours during the pop */
+}
+
 .cell-count {
     position: absolute;
     background: white;
