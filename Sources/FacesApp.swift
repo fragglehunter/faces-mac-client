@@ -64,16 +64,23 @@ struct FacesApp: App {
                 .keyboardShortcut("d", modifiers: [.command, .option])
             }
 
-            // Visualization modes, switchable with ⌘1…⌘8 (in dropdown order).
-            // The active mode shows a checkmark; switching is live (no reload).
+            // Visualization modes, switchable with ⌘1…⌘9 then ⌘0 for the 10th,
+            // in dropdown order. The active mode shows a checkmark; switching is
+            // live (no reload). Only the first 10 modes get a number shortcut —
+            // a digit must be a single character, so we use (idx+1) % 10 (the
+            // 10th → "0") and bind nothing beyond ten (avoids a crash/collision).
             CommandMenu("Mode") {
                 ForEach(FacesData.modes.indices, id: \.self) { idx in
                     let mode = FacesData.modes[idx]
-                    Button(action: { selectMode(mode.id) }) {
+                    let btn = Button(action: { selectMode(mode.id) }) {
                         // Leading checkmark marks the current mode (plain space keeps alignment).
                         Text((config.visualMode == mode.id ? "✓ " : "   ") + mode.label)
                     }
-                    .keyboardShortcut(KeyEquivalent(Character("\(idx + 1)")), modifiers: .command)
+                    if idx < 10 {
+                        btn.keyboardShortcut(KeyEquivalent(Character("\((idx + 1) % 10)")), modifiers: .command)
+                    } else {
+                        btn
+                    }
                 }
             }
         }

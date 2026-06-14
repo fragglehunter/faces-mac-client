@@ -26,7 +26,9 @@
     cavern:  "Explorers",
     garden:  "Flowers",
     claude:  "Signals",
-    fireworks: "Fireworks"
+    fireworks: "Fireworks",
+    snake:   "Pellets",
+    derby:   "Boosts"
   };
 
   function currentModeLabel() {
@@ -69,6 +71,8 @@
     if (window.__applyGardenSettings__)  window.__applyGardenSettings__(s);
     if (window.__applyClaudeSettings__)  window.__applyClaudeSettings__(s);
     if (window.__applyFireworksSettings__) window.__applyFireworksSettings__(s);
+    if (window.__applySnakeSettings__) window.__applySnakeSettings__(s);
+    if (window.__applyDerbySettings__) window.__applyDerbySettings__(s);
 
     // Persist via Swift bridge
     var mh = window.webkit && window.webkit.messageHandlers;

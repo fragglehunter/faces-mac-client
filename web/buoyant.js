@@ -236,7 +236,7 @@
   }
 
   function setVisualMode(mode) {
-    const valid = ["classic", "legacy", "buoyant", "cavern", "space", "garden", "claude", "fireworks"];
+    const valid = ["classic", "legacy", "buoyant", "cavern", "space", "garden", "claude", "fireworks", "snake", "derby"];
     visualMode = valid.includes(mode) ? mode : "classic";
     // Keep the shared settings mode in sync FIRST so the toolbar's rate-control
     // label (currentModeLabel reads __FACES_SETTINGS__.visualMode) updates to the
@@ -253,6 +253,8 @@
     document.body.classList.toggle("visual-garden",  visualMode === "garden");
     document.body.classList.toggle("visual-claude",  visualMode === "claude");
     document.body.classList.toggle("visual-fireworks", visualMode === "fireworks");
+    document.body.classList.toggle("visual-snake", visualMode === "snake");
+    document.body.classList.toggle("visual-derby", visualMode === "derby");
     if (modeSelect && modeSelect.value !== visualMode) modeSelect.value = visualMode;
     if (visualMode === "buoyant") start();
     else stop();
@@ -263,6 +265,8 @@
     if (typeof window.__gardenSetMode__ === "function") window.__gardenSetMode__(visualMode);
     if (typeof window.__claudeSetMode__ === "function") window.__claudeSetMode__(visualMode);
     if (typeof window.__fireworksSetMode__ === "function") window.__fireworksSetMode__(visualMode);
+    if (typeof window.__snakeSetMode__ === "function") window.__snakeSetMode__(visualMode);
+    if (typeof window.__derbySetMode__ === "function") window.__derbySetMode__(visualMode);
     // Refresh the toolbar rate slider's label + position for the new mode.
     if (window.__syncRateControl__) window.__syncRateControl__();
     // Legacy live-switch: if the page loaded with hideKey=true, #key is empty.
