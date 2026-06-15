@@ -20,6 +20,7 @@
   var FALLBACK_EMOJI  = "❓";        // ❓
   var SLEEPY_EMOJI    = "😴";  // 😴
   var DIZZY_EMOJI     = "😵";  // 😵
+  var OVERWHELMED_EMOJI = "🤯";  // 🤯 rate-limited / overwhelmed (429)
   var FALLBACK_COLOR  = "#c8b89a";       // earthy soil tan
 
   var MAX_FLOWERS   = 80;
@@ -142,7 +143,7 @@
     var latMs      = Number(entry.latencyMs || 0);
     var slow       = latMs >= slowThreshMs;
     var emoji      = (failed && !hasEmoji)
-      ? (status === 504 || status === 0 || status === 429 ? SLEEPY_EMOJI : DIZZY_EMOJI)
+      ? (status === 429 ? OVERWHELMED_EMOJI : (status === 504 || status === 0 ? SLEEPY_EMOJI : DIZZY_EMOJI))
       : rawEmoji;
     return {
       id:++seq, status, latMs, slow, failed, partial, parseFail,

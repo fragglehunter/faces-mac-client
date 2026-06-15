@@ -21,7 +21,8 @@
     success:      0,  // clean 200 (valid color + emoji)
     partial:      0,  // 200 but errors[] present -> purple border
     errors:       0,  // 5xx face error
-    timeouts:     0,  // 504 / 429 / network error
+    timeouts:     0,  // 504 / network error
+    ratelimited:  0,  // 429 rate-limited (service overwhelmed)
     latched:      0,  // 599 sticky error
     slow:         0,  // latencyMs >= slowThresholdMs
     interactions: 0,  // pops / blasts / plucks across all modes
@@ -86,7 +87,9 @@
     } else if (st === 599) {
       d.latched++;
       d.errors++;
-    } else if (st === 429 || st === 504 || st === 0) {
+    } else if (st === 429) {
+      d.ratelimited++;   // rate-limited / overwhelmed — tracked separately from timeouts
+    } else if (st === 504 || st === 0) {
       d.timeouts++;
     } else if (st >= 500) {
       d.errors++;
@@ -214,7 +217,10 @@
         title:"Face service errors (HTTP 5xx or parse failure). Trigger via Simulator → Face → Errors %." });
     if (d.timeouts > 0)
       want.push({ key:"timeout", cls:"fhs-timeout", icon:"&#x23F1;&#xFE0F;", val:num(d.timeouts), lbl:"timeout",
-        title:"Timeouts or rate-limits (HTTP 504 or 429). Trigger via Simulator → Max RPS or high Delay." });
+        title:"Timeouts / network errors (HTTP 504 or 0). Trigger via Simulator → high Delay." });
+    if (d.ratelimited > 0)
+      want.push({ key:"ratelimit", cls:"fhs-ratelimit", icon:"&#x1F92F;", val:num(d.ratelimited), lbl:"rate-limited",
+        title:"Rate-limited — the service is overwhelmed (HTTP 429). Trigger via Simulator → Max RPS." });
     if (d.latched > 0)
       want.push({ key:"latch", cls:"fhs-latch", icon:"&#x1F534;", val:num(d.latched), lbl:"latched",
         title:"Latched 599 errors — sticky failure that auto-clears after 30 s idle. Trigger via Simulator → Latch %." });
