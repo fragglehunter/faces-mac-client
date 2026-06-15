@@ -772,19 +772,32 @@
   //    *Edge field is present (§8.3)
   //  - publisher → rate / paused; subscriber → dot / paused
   //  - face / gui / anything else → health dot from pod.available
-  function infraPodStateHTML(pod, base) {
-    var badges = base ? fiPodFaultBadges(pod, base) : "";
-    if (badges) return badges;
+  // Serving value(s) for a smiley/color pod. When the edge value differs from
+  // center, both glyphs/swatches are shown side by side (center first, then
+  // edge); the hover tooltip labels which is which. Returns "" otherwise.
+  function podServingStateHTML(pod) {
     if (pod.smiley != null) {
       var em = '<span class="infra-state-emoji">' + esc(decodeEntity(pod.smiley)) + "</span>";
-      if (pod.smileyEdge != null) em += '<span class="infra-state-emoji">' + esc(decodeEntity(pod.smileyEdge)) + "</span>";
+      if (pod.smileyEdge != null)
+        em += '<span class="infra-state-emoji">' + esc(decodeEntity(pod.smileyEdge)) + "</span>";
       return em;
     }
     if (pod.color != null && validHex(pod.color)) {
       var sw = '<span class="infra-state-color" style="background:' + pod.color + '"></span>';
-      if (pod.colorEdge != null && validHex(pod.colorEdge)) sw += '<span class="infra-state-color" style="background:' + pod.colorEdge + '"></span>';
+      if (pod.colorEdge != null && validHex(pod.colorEdge))
+        sw += '<span class="infra-state-color" style="background:' + pod.colorEdge + '"></span>';
       return sw;
     }
+    return "";
+  }
+
+  function infraPodStateHTML(pod, base) {
+    var serving = podServingStateHTML(pod);
+    var badges = base ? fiPodFaultBadges(pod, base) : "";
+    // Show the serving value(s) AND any fault badges together — a chaos-affected
+    // smiley/color pod must still reveal what it's serving (center/edge).
+    if (serving) return badges ? (serving + '<span class="infra-state-sep"></span>' + badges) : serving;
+    if (badges) return badges;
     if (pod.publishIntervalMs != null) {       // publisher → rate / paused
       if (pod.available === false) return RED_DOT;
       if (pod.paused) return '<span class="infra-state-rate paused">&#x23F8;</span>';
