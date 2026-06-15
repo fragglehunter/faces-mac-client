@@ -20,6 +20,7 @@
   var DIZZY_EMOJI     = "😵";  // 😵
   var SLEEPY_EMOJI    = "😴";  // 😴
   var DEAD_EMOJI      = "💀";  // 💀 pilot is done for once the rocket is shot down
+  var OVERWHELMED_EMOJI = "🤯";  // 🤯 rate-limited / overwhelmed (429)
   var FALLBACK_COLOR  = "#8b8fa8";       // silver-grey for missing color
 
   var MAX_ROCKETS    = 80;
@@ -219,7 +220,7 @@
 
     var emoji;
     if (failed && !hasEmoji) {
-      emoji = timeout ? SLEEPY_EMOJI : DIZZY_EMOJI;
+      emoji = status === 429 ? OVERWHELMED_EMOJI : (timeout ? SLEEPY_EMOJI : DIZZY_EMOJI);
     } else {
       emoji = hasEmoji ? rawEmoji : FALLBACK_EMOJI;
     }

@@ -145,8 +145,10 @@
     };
     if (status === 0 || (status >= 500 && status !== 599) || status === 429) {
       out.kind = "fail";
-      out.stutter = (status === 429);
       out.color = SMOKE_GREY;
+      // Rate-limited (429): stutters into several pops AND shows the 🤯
+      // overwhelmed star, so it's distinguishable from a plain failure.
+      if (status === 429) { out.stutter = true; out.hasEmoji = true; out.emoji = "🤯"; }
     } else if (status === 504 || status === 599) {
       out.kind = "mortar";
       out.color = SMOKE_GREY;

@@ -37,6 +37,7 @@
   var SLEEPY_EMOJI   = "😴";  // 😴
   var SCARED_EMOJI   = "😱";  // 😱 frozen in terror under the falling boulder
   var DEAD_EMOJI     = "💀";  // 💀 flattened
+  var OVERWHELMED_EMOJI = "🤯";  // 🤯 rate-limited / overwhelmed (429)
 
   var MAX_EXPLORERS = 60;
   var FOOT = 9;   // feet are drawn down to +9 in sprite coords
@@ -246,7 +247,7 @@
     var slow       = Number(entry.latencyMs || 0) >= thresh;
 
     var emoji = failed && !hasEmoji
-      ? (status === 504 || status === 0 || status === 429 ? SLEEPY_EMOJI : DIZZY_EMOJI)
+      ? (status === 429 ? OVERWHELMED_EMOJI : (status === 504 || status === 0 ? SLEEPY_EMOJI : DIZZY_EMOJI))
       : (hasEmoji ? rawEmoji : FALLBACK_EMOJI);
 
     return {

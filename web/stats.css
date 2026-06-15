@@ -54,6 +54,7 @@
 .fhs-partial { background: rgba(180,100,0,0.78); color: #fff8e0; }
 .fhs-err     { background: rgba(200,30,50,0.80); color: #ffecec; }
 .fhs-timeout { background: rgba(140,60,170,0.78); color: #f5eeff; }
+.fhs-ratelimit { background: rgba(210,120,0,0.82); color: #fff2dd; }
 .fhs-latch   { background: rgba(180,40,40,0.80); color: #ffecec; }
 .fhs-slow    { background: rgba(20,70,180,0.78); color: #ddeeff; }
 .fhs-score   {

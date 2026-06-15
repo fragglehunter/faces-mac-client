@@ -206,6 +206,7 @@
 
     if (status===0 || (status>=500 && status!==599) || status===429) {
       out.failed = true;
+      if (status===429) { out.hasEmoji = true; out.emoji = "🤯"; }  // overwhelmed / rate-limited
     } else if (status===504 || status===599) {
       out.timeout = true;
     } else if (status===200 && body) {

@@ -15,6 +15,7 @@
   const SLEEPY_EMOJI = "\ud83d\ude34";    // sleeping face
   const SCARED_EMOJI = "\ud83d\ude31";    // \ud83d\ude31 face screaming in fear (balloon just popped)
   const DEAD_EMOJI = "\ud83d\udc80";      // \ud83d\udc80 skull (basket has hit the ground)
+  const OVERWHELMED_EMOJI = "\ud83e\udd2f"; // exploding head \u2014 rate-limited / overwhelmed (429)
   const MAX_EVENTS = 90;
   const MAX_WEATHER = 12;
 
@@ -371,9 +372,11 @@
       hasColor,
       hasEmoji,
       color,
-      // Match the shared convention (cavern/space/garden): timeout/rate-limit
-      // (504/0/429) → sleepy 😴; any other hard failure → dizzy 😵.
-      emoji: failed && !hasEmoji ? (status === 504 || status === 0 || status === 429 ? SLEEPY_EMOJI : DIZZY_EMOJI) : emoji,
+      // Shared convention: rate-limited/overwhelmed (429) → 🤯; timeout (504/0)
+      // → sleepy 😴; any other hard failure → dizzy 😵.
+      emoji: failed && !hasEmoji
+        ? (status === 429 ? OVERWHELMED_EMOJI : (status === 504 || status === 0 ? SLEEPY_EMOJI : DIZZY_EMOJI))
+        : emoji,
       which: entry.which || "center",
       row: entry.row,
       col: entry.col,

@@ -70,6 +70,35 @@ body {
 .dw-lat { color: #ffd60a; }
 .dw-rps { color: #0a84ff; }
 
+/* ── Per-status-code breakdown ───────────────────────────────────────── */
+.dw-codes {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 8px 16px;
+  background: #1f1f21;
+  border-bottom: 1px solid #2c2c2e;
+  flex-shrink: 0;
+  font-size: 12px;
+}
+.dw-codes .dw-codes-label { color: #8e8e93; margin-right: 2px; }
+.dw-code {
+  display: inline-flex;
+  gap: 5px;
+  align-items: baseline;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #2c2c2e;
+  border: 1px solid #3a3a3c;
+  font-variant-numeric: tabular-nums;
+}
+.dw-code b { font-weight: 700; }
+.dw-code .dw-code-n { color: #8e8e93; }
+.dw-code.c-ok   b { color: #30d158; }
+.dw-code.c-warn b { color: #ffd60a; }  /* 3xx / 429 / 599 */
+.dw-code.c-bad  b { color: #ff453a; }  /* 4xx (non-429) / 5xx / 0 */
+
 /* ── Toolbar ────────────────────────────────────────────────────────── */
 .dw-toolbar {
   display: flex;
@@ -181,6 +210,7 @@ tbody td {
   </div>
 </div>
 <div class="dw-overview" id="dw-overview"></div>
+<div class="dw-codes" id="dw-codes"></div>
 <div class="dw-toolbar">
   <label>
     Max rows
@@ -218,6 +248,7 @@ var selected = null;
 var limitEl  = document.getElementById("dw-limit");
 var summaryEl = document.getElementById("dw-summary");
 var overviewEl = document.getElementById("dw-overview");
+var codesEl  = document.getElementById("dw-codes");
 var tbody    = document.getElementById("dw-tbody");
 var detailEl = document.getElementById("dw-detail");
 
@@ -283,6 +314,22 @@ function render() {
     stat(avgLat + "ms", "lat", "avg lat") +
     stat(rps + "/s", "rps", "req/s") +
     stat(pods.size, "", "pods");
+
+  // Per-status-code breakdown — counts EVERY distinct HTTP status seen (incl.
+  // 429 rate-limits, 504 timeouts, 599 latched, 0 network errors), over the
+  // full captured buffer so nothing is silently lumped into "errors".
+  var codeCounts = {};
+  entries.forEach(function(e){ var s = (e.status == null ? 0 : e.status); codeCounts[s] = (codeCounts[s]||0) + 1; });
+  var codeKeys = Object.keys(codeCounts).map(Number).sort(function(a,b){ return a-b; });
+  codesEl.innerHTML = '<span class="dw-codes-label">By code:</span>' + (codeKeys.length
+    ? codeKeys.map(function(s){
+        var cls = (s >= 200 && s < 300) ? "c-ok"
+                : (s === 429 || s === 599 || (s >= 300 && s < 400)) ? "c-warn"
+                : "c-bad";
+        return '<span class="dw-code ' + cls + '"><b>' + (s === 0 ? "ERR" : s) +
+               '</b><span class="dw-code-n">' + codeCounts[s] + '</span></span>';
+      }).join("")
+    : '<span class="dw-codes-label">none yet</span>');
 
   // Table
   var frag = document.createDocumentFragment();

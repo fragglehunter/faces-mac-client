@@ -717,10 +717,16 @@ class Cell {
                 }
             }
         }
-        else if ((curStatus == 504) || (curStatus == 429)) {
-            // Timeout (504) or ratelimit (429) talking to the face
-            // service. We treat these the same: remember that a timeout
-            // happened...
+        else if (curStatus == 429) {
+            // Rate-limited: the service is OVERWHELMED. Show the kaboom face on
+            // a yellow background (distinct from a 504 timeout) so it's obvious
+            // rate-limiting is happening — not just a silent counter tick.
+            anyTimeouts = true;
+            smiley = Cell.smilies.kaboom;
+            bgColor = Cell.colors.yellow;
+        }
+        else if (curStatus == 504) {
+            // Timeout talking to the face service: remember it happened...
             anyTimeouts = true;
 
             // ...and force the smiley & color to "timed out" too.
@@ -889,6 +895,12 @@ class CellWatcher {
 
                 if (cell.lastStatus == 599) {
                     smiley = Cell.smilies.neutral
+                    bgColor = Cell.colors.yellow
+                }
+                else if (cell.lastStatus == 429) {
+                    // Sustained rate-limiting stays "overwhelmed" (kaboom/yellow)
+                    // rather than escalating to the sleeping/red timeout look.
+                    smiley = Cell.smilies.kaboom
                     bgColor = Cell.colors.yellow
                 }
 
