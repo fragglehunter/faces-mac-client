@@ -375,6 +375,9 @@ body {
 }
 .infra-state-rate.paused { color: var(--yellow); background: var(--yellow-bg); }
 
+/* Gap between a pod's serving value(s) and its fault badges. */
+.infra-state-sep { display: inline-block; width: 5px; }
+
 .fi-fault-badge {
   font-size: 9px; font-weight: 700;
   border-radius: 4px;
