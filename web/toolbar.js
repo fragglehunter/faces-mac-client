@@ -28,7 +28,8 @@
     claude:  "Signals",
     fireworks: "Fireworks",
     snake:   "Pellets",
-    derby:   "Boosts"
+    derby:   "Boosts",
+    bricks:  "Bricks"
   };
 
   function currentModeLabel() {
@@ -73,6 +74,7 @@
     if (window.__applyFireworksSettings__) window.__applyFireworksSettings__(s);
     if (window.__applySnakeSettings__) window.__applySnakeSettings__(s);
     if (window.__applyDerbySettings__) window.__applyDerbySettings__(s);
+    if (window.__applyBricksSettings__) window.__applyBricksSettings__(s);
 
     // Persist via Swift bridge
     var mh = window.webkit && window.webkit.messageHandlers;

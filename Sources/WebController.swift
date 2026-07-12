@@ -194,6 +194,7 @@ final class WebController: NSObject, ObservableObject,
             "window.__applyFireworksSettings__ && window.__applyFireworksSettings__(\(json));",
             "window.__applySnakeSettings__ && window.__applySnakeSettings__(\(json));",
             "window.__applyDerbySettings__ && window.__applyDerbySettings__(\(json));",
+            "window.__applyBricksSettings__ && window.__applyBricksSettings__(\(json));",
         ].joined(separator: "\n")
         webView.evaluateJavaScript(js, completionHandler: nil)
     }
@@ -359,7 +360,7 @@ final class WebController: NSObject, ObservableObject,
         case "setVisualMode":
             if let body = message.body as? [String: Any] {
                 let next    = (body["visualMode"] as? String) ?? "classic"
-                let allowed = ["classic", "legacy", "buoyant", "cavern", "space", "garden", "claude", "fireworks", "snake", "derby"]
+                let allowed = ["classic", "legacy", "buoyant", "cavern", "space", "garden", "claude", "fireworks", "snake", "derby", "bricks"]
                 config.visualMode = allowed.contains(next) ? next : "classic"
                 config.save()
                 // Re-apply live settings so the actual request/poll rate matches the new

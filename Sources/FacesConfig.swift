@@ -49,6 +49,7 @@ enum FacesData {
         ("fireworks", "Fireworks", "sparkles"),
         ("snake",   "Snake Duel",      "gamecontroller"),
         ("derby",   "Grand Prix", "flag.checkered"),
+        ("bricks",  "Bricks",  "square.stack.3d.up"),
     ]
 }
 

@@ -44,6 +44,7 @@
   <link rel="stylesheet" href="fireworks.css?v=30">
   <link rel="stylesheet" href="snake.css?v=34">
   <link rel="stylesheet" href="derby.css?v=34">
+  <link rel="stylesheet" href="bricks.css?v=51">
   <!-- skin.css restyles the chrome (card/toolbar/buttons) to feel macOS-native
        and defines the selectable appearances; loaded last so it can override. -->
   <link rel="stylesheet" href="skin.css?v=29">
@@ -74,6 +75,7 @@
           <option value="fireworks">Fireworks</option>
           <option value="snake">Snake Duel</option>
           <option value="derby">Grand Prix</option>
+          <option value="bricks">Bricks</option>
         </select>
       </label>
       <div id="userDiv" class="inline">
@@ -173,6 +175,11 @@
     <canvas id="derby-canvas"></canvas>
   </div>
 
+  <!-- bricks-root: fully procedural brick-wall mosaic scene (no image asset) -->
+  <div id="bricks-root" class="bricks-root" aria-label="Brickworks wall scene">
+    <canvas id="bricks-canvas"></canvas>
+  </div>
+
   <footer class="site-footer">
     &copy; <span id="copyright-year"></span> Buoyant Inc.
   </footer>
@@ -209,6 +216,7 @@
   <script src="fireworks.js?v=50"></script>
   <script src="snake.js?v=42"></script>
   <script src="derby.js?v=41"></script>
+  <script src="bricks.js?v=56"></script>
   <script src="toolbar.js?v=34"></script>
   <script src="debug.js?v=27"></script>
 </BODY>

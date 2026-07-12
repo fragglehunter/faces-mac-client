@@ -281,6 +281,7 @@ private struct GridTab: View {
         case "fireworks": return "Fireworks/sec"
         case "snake":   return "Pellets/sec"
         case "derby":   return "Boosts/sec"
+        case "bricks":  return "Bricks/sec"
         default:        return "Scene rate"
         }
     }
