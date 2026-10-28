@@ -67,9 +67,10 @@ final class FacesConfig: ObservableObject {
     @Published var adminEndpoint: String = ""
     @Published var adminTheme: String = "dark"
     @Published var adminSidebarCollapsed: Bool = false
-    // Optional auto-sign-in credentials. Stored in UserDefaults (demo creds, not
-    // secrets-grade storage); when set, the Admin window signs in on 401 without
-    // showing the login overlay.
+    // Optional auto-sign-in credentials. The username lives in UserDefaults; the
+    // password lives in the Keychain (AdminKeychain) and never reaches page JS —
+    // when set, AdminWindowController signs in natively on 401 without showing
+    // the login overlay.
     @Published var adminUsername: String = ""
     @Published var adminPassword: String = ""
     @Published var adminShowDebugPage: Bool = false
@@ -120,6 +121,9 @@ final class FacesConfig: ObservableObject {
     @Published var color: ServiceChaos = ServiceChaos()
 
     private let defaultsKey = "facesConfig.v2"
+    private static let legacyDefaultsKey = "facesConfig.v1"
+    /// Last value known to be in the Keychain, so save() only writes on change.
+    private var keychainPassword = ""
 
     init() { load() }
 
@@ -186,7 +190,7 @@ final class FacesConfig: ObservableObject {
         var adminTheme: String?
         var adminSidebarCollapsed: Bool?
         var adminUsername: String?
-        var adminPassword: String?
+        var adminPassword: String?   // legacy plaintext — read for migration, never written
         var adminShowDebugPage: Bool?
         var numRows: Int
         var numCols: Int
@@ -221,7 +225,7 @@ final class FacesConfig: ObservableObject {
             connectionMode: connectionMode, endpoint: endpoint,
             adminEndpoint: adminEndpoint, adminTheme: adminTheme,
             adminSidebarCollapsed: adminSidebarCollapsed,
-            adminUsername: adminUsername, adminPassword: adminPassword,
+            adminUsername: adminUsername, adminPassword: nil,
             adminShowDebugPage: adminShowDebugPage,
             numRows: numRows, numCols: numCols, edgeSize: edgeSize,
             startActive: startActive, hideKey: hideKey, showPods: showPods,
@@ -239,26 +243,25 @@ final class FacesConfig: ObservableObject {
         if let data = try? JSONEncoder().encode(p) {
             UserDefaults.standard.set(data, forKey: defaultsKey)
         }
-        // Also save to old key so old builds still work
-        UserDefaults.standard.set(data(forKey: defaultsKey), forKey: "facesConfig.v1")
-    }
-
-    private func data(forKey key: String) -> Data? {
-        UserDefaults.standard.data(forKey: key)
+        if adminPassword != keychainPassword, AdminKeychain.write(adminPassword) {
+            keychainPassword = adminPassword
+        }
     }
 
     func load() {
         // Try v2 first, then fall back to v1
-        let raw = UserDefaults.standard.data(forKey: defaultsKey)
-            ?? UserDefaults.standard.data(forKey: "facesConfig.v1")
+        let v2 = UserDefaults.standard.data(forKey: defaultsKey)
+        let raw = v2 ?? UserDefaults.standard.data(forKey: Self.legacyDefaultsKey)
+        keychainPassword = AdminKeychain.read() ?? ""
+        adminPassword = keychainPassword
         guard let raw, let p = try? JSONDecoder().decode(Persisted.self, from: raw) else { return }
+        defer { migrateLegacyStorage(plaintextPassword: p.adminPassword, hadV2: v2 != nil) }
         connectionMode = p.connectionMode ?? ConnectionMode.simulator.rawValue
         endpoint       = p.endpoint ?? ""
         adminEndpoint  = p.adminEndpoint ?? ""
         adminTheme     = p.adminTheme ?? "dark"
         adminSidebarCollapsed = p.adminSidebarCollapsed ?? false
         adminUsername  = p.adminUsername ?? ""
-        adminPassword  = p.adminPassword ?? ""
         adminShowDebugPage = p.adminShowDebugPage ?? false
         numRows        = p.numRows
         numCols        = p.numCols
@@ -288,6 +291,23 @@ final class FacesConfig: ObservableObject {
         face           = p.face
         smiley         = p.smiley
         color          = p.color
+    }
+
+    /// Older builds kept the password in plaintext inside the defaults blob and
+    /// mirrored that blob to facesConfig.v1. Move any such password into the
+    /// Keychain, rewrite v2 without it, and drop the v1 mirror.
+    private func migrateLegacyStorage(plaintextPassword: String?, hadV2: Bool) {
+        let legacy = plaintextPassword ?? ""
+        let hasV1 = UserDefaults.standard.object(forKey: Self.legacyDefaultsKey) != nil
+        guard !legacy.isEmpty || !hadV2 || hasV1 else { return }
+        if !legacy.isEmpty && keychainPassword.isEmpty {
+            // Keep the plaintext copies until the Keychain actually holds it.
+            guard AdminKeychain.write(legacy) else { adminPassword = legacy; return }
+            keychainPassword = legacy
+            adminPassword = legacy
+        }
+        save()
+        UserDefaults.standard.removeObject(forKey: Self.legacyDefaultsKey)
     }
 
     func normalizedEndpoint() -> String {

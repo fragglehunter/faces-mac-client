@@ -402,7 +402,7 @@ private struct ServicesTab: View {
                             .help("faces-admin username (only needed when the server has auth enabled).")
                         SecureField("Password", text: $config.adminPassword)
                             .textFieldStyle(.roundedBorder)
-                            .help("faces-admin password. Stored in app preferences for automatic sign-in.")
+                            .help("faces-admin password. Stored in the macOS Keychain for automatic sign-in.")
                     }
                     Text("With credentials set, the Admin window signs in automatically — no login prompt.")
                         .font(.caption2)

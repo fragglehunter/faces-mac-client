@@ -45,8 +45,10 @@
   function validHex(s) { return typeof s === "string" && /^#[0-9a-fA-F]{6}$/.test(s); }
   function decodeEmoji(s) {
     if (!s || typeof s !== "string") return "";
-    var d = document.createElement("div"); d.innerHTML = s;
-    return (d.textContent || "").trim();
+    // <textarea> parses as RCDATA: entities decode, markup stays inert text
+    // (a detached <div> would still fire <img onerror>).
+    var t = document.createElement("textarea"); t.innerHTML = s;
+    return (t.value || "").trim();
   }
   function settings() { return window.__FACES_SETTINGS__ || {}; }
   function slowThresholdMs() { var n = Number(settings().slowThresholdMs); return Number.isFinite(n) && n > 0 ? n : 300; }
