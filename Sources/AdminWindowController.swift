@@ -7,6 +7,9 @@
 // session cookie is held in-memory for the app run, and a no-redirect delegate so
 // the /api/logout 303 surfaces to JS instead of being followed.
 //
+// The stored admin password never reaches page JS: the page only learns whether
+// credentials exist, and asks Swift (adminAutoLogin) to sign in with them.
+//
 // SPDX-License-Identifier: Apache-2.0
 
 import AppKit
@@ -24,14 +27,32 @@ final class AdminWindowController: NSObject,
     // Ephemeral so the faces-admin-session cookie lives only for this app run
     // (it dies on pod restart anyway), and so admin traffic never touches the
     // shared URLCache. .always cookie policy keeps Set-Cookie from being dropped.
-    private lazy var session: URLSession = {
+    private lazy var session: URLSession = makeSession()
+
+    private func makeSession() -> URLSession {
         let cfg = URLSessionConfiguration.ephemeral
         cfg.httpShouldSetCookies = true
         cfg.httpCookieAcceptPolicy = .always
         cfg.timeoutIntervalForRequest = 15
         cfg.requestCachePolicy = .reloadIgnoringLocalCacheData
         return URLSession(configuration: cfg, delegate: self, delegateQueue: nil)
-    }()
+    }
+
+    /// Drop the faces-admin session cookie no matter what the server did with
+    /// /api/logout: empty the cookie jar, then replace the session outright.
+    private func clearSession() {
+        if let jar = session.configuration.httpCookieStorage {
+            jar.cookies?.forEach { jar.deleteCookie($0) }
+        }
+        session.invalidateAndCancel()
+        session = makeSession()
+    }
+
+    /// Credential facts that are safe to hand to page JS (never the password).
+    private func credentialSummary() -> [String: Any] {
+        ["username": config.adminUsername,
+         "hasCredentials": !config.adminUsername.isEmpty && !config.adminPassword.isEmpty]
+    }
 
     init(config: FacesConfig, webDirURL: URL?) {
         self.config = config
@@ -53,11 +74,8 @@ final class AdminWindowController: NSObject,
     /// Push a live endpoint/credentials change from Settings into an open window.
     func pushNativeSettings() {
         guard let wv = adminWebView else { return }
-        let dict: [String: Any] = [
-            "endpoint": config.normalizedAdminEndpoint(),
-            "username": config.adminUsername,
-            "password": config.adminPassword,
-        ]
+        var dict = credentialSummary()
+        dict["endpoint"] = config.normalizedAdminEndpoint()
         guard let data = try? JSONSerialization.data(withJSONObject: dict),
               let json = String(data: data, encoding: .utf8) else { return }
         wv.evaluateJavaScript("window.__adminApplyNativeSettings__ && __adminApplyNativeSettings__(\(json))", completionHandler: nil)
@@ -71,6 +89,8 @@ final class AdminWindowController: NSObject,
         cfg.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "adminProxy")
         cfg.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "setAdminPrefs")
         cfg.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "adminSaveFile")
+        cfg.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "adminAutoLogin")
+        cfg.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "clearAdminSession")
         installUserScript(into: cfg.userContentController)
 
         let wv = WKWebView(frame: .zero, configuration: cfg)
@@ -126,15 +146,14 @@ final class AdminWindowController: NSObject,
 
     private func installUserScript(into ucc: WKUserContentController) {
         ucc.removeAllUserScripts()
-        let dict: [String: Any] = [
+        var dict = credentialSummary()
+        dict.merge([
             "endpoint": config.normalizedAdminEndpoint(),
             "theme": config.adminTheme,
             "sidebarCollapsed": config.adminSidebarCollapsed,
             "showDebugPage": config.adminShowDebugPage,
-            "username": config.adminUsername,
-            "password": config.adminPassword,
             "app": "faces-gui-mac-app",
-        ]
+        ]) { _, new in new }
         guard let data = try? JSONSerialization.data(withJSONObject: dict),
               let json = String(data: data, encoding: .utf8) else { return }
         ucc.addUserScript(WKUserScript(
@@ -164,6 +183,25 @@ final class AdminWindowController: NSObject,
         case "adminProxy":
             guard let body = message.body as? [String: Any] else { reply(["status": 0, "error": "bad message"]); return }
             handleAdminProxy(body: body, reply: reply)
+
+        case "adminAutoLogin":
+            // Sign in with the Keychain-held Settings credentials. JS gets the
+            // same reply shape as adminProxy but never sees the password.
+            let user = config.adminUsername, pass = config.adminPassword
+            guard !user.isEmpty, !pass.isEmpty else { reply(["status": 0, "error": "no stored credentials"]); return }
+            let opts = message.body as? [String: Any] ?? [:]
+            let payload: [String: Any] = ["username": user, "password": pass,
+                                          "rememberMe": (opts["rememberMe"] as? Bool) ?? true]
+            guard let data = try? JSONSerialization.data(withJSONObject: payload),
+                  let json = String(data: data, encoding: .utf8) else {
+                reply(["status": 0, "error": "encode failed"]); return
+            }
+            performAdminRequest(method: "POST", path: "/api/login", bodyStr: json,
+                                binary: false, timeoutMs: (opts["timeoutMs"] as? Int) ?? 12000, reply: reply)
+
+        case "clearAdminSession":
+            clearSession()
+            reply(["ok": true])
 
         case "setAdminPrefs":
             if let body = message.body as? [String: Any] {
@@ -211,12 +249,17 @@ final class AdminWindowController: NSObject,
     private static let allowedMethods: Set<String> = ["GET", "PUT", "POST"]
 
     private func handleAdminProxy(body: [String: Any], reply: @escaping ([String: Any]) -> Void) {
-        let method = (body["method"] as? String ?? "GET").uppercased()
-        let path = (body["path"] as? String) ?? ""
-        let bodyStr = body["body"] as? String
-        let binary = (body["binary"] as? Bool) ?? false
-        let timeoutMs = (body["timeoutMs"] as? Int) ?? 12000
+        performAdminRequest(method: (body["method"] as? String ?? "GET").uppercased(),
+                            path: (body["path"] as? String) ?? "",
+                            bodyStr: body["body"] as? String,
+                            binary: (body["binary"] as? Bool) ?? false,
+                            timeoutMs: (body["timeoutMs"] as? Int) ?? 12000,
+                            reply: reply)
+    }
 
+    private func performAdminRequest(method: String, path: String, bodyStr: String?,
+                                     binary: Bool, timeoutMs: Int,
+                                     reply: @escaping ([String: Any]) -> Void) {
         guard AdminWindowController.allowedMethods.contains(method) else {
             reply(["status": 0, "error": "method not allowed"]); return
         }

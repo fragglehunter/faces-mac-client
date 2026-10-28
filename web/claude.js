@@ -136,9 +136,10 @@
 
   function decodeEmoji(s) {
     if (!s || typeof s!=="string") return "";
-    const d = document.createElement("div");
-    d.innerHTML = s;
-    return d.textContent || "";
+    // <textarea> parses as RCDATA: entities decode, markup stays inert text.
+    const t = document.createElement("textarea");
+    t.innerHTML = s;
+    return t.value || "";
   }
 
   function safeJson(s) { try { return JSON.parse(s); } catch(e) { return null; } }

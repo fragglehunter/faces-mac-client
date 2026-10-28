@@ -93,6 +93,20 @@ function $(id) {
     return document.getElementById(id)
 }
 
+// Smileys arrive as HTML entities ("&#x1F603;") from the face service, which in
+// remote mode is an arbitrary user-supplied server. Decode entities with the
+// <textarea> trick (RCDATA parsing: markup stays text, nothing executes) and
+// assign as textContent so a hostile value can never become DOM.
+function decodeEntities(s) {
+    const ta = document.createElement("textarea")
+    ta.innerHTML = String(s == null ? "" : s)
+    return ta.value
+}
+
+function setSmiley(el, smiley) {
+    if (el) el.textContent = decodeEntities(smiley)
+}
+
 // ===== Wrapper sizing: keep white wrapper aligned to visible content =====
 function updateWrapperMax() {
     // Column widths
@@ -342,7 +356,7 @@ class PodInfo {
         this.infoDiv.style.background = bgColor
         this.infoDiv.style.borderColor = borderColor
         this.idDiv.classList.remove("faded-pod-id")
-        this.smileySpan.innerHTML = smiley
+        setSmiley(this.smileySpan, smiley)
 
         this.lastUpdated = new Date().getTime()
     }
@@ -376,7 +390,7 @@ class PodSet {
             let podIDDiv = document.createElement("div")
             podIDDiv.id = `cell-pod-id-${shortName}`
             podIDDiv.className = "cell-pod-id"
-            podIDDiv.innerHTML = shortName
+            podIDDiv.textContent = shortName
             podDiv.appendChild(podIDDiv)
 
             let podInfoDiv = document.createElement("div")
@@ -597,7 +611,7 @@ class Cell {
 
                 setTimeout(() => {
                     if (smiley != undefined) {
-                        $(`smiley-${this.row}-${this.col}`).innerHTML = smiley
+                        setSmiley($(`smiley-${this.row}-${this.col}`), smiley)
                     }
 
                     if (bgColor != undefined) {
@@ -633,7 +647,7 @@ class Cell {
             $(`cell-${this.row}-${this.col}`).style.opacity = 0.0
 
             setTimeout(() => {
-                $(`smiley-${this.row}-${this.col}`).innerHTML = Cell.smilies.confused
+                setSmiley($(`smiley-${this.row}-${this.col}`), Cell.smilies.confused)
                 $(`cell-${this.row}-${this.col}`).style.opacity = 1.0
                 $(`cell-${this.row}-${this.col}`).style.background = Cell.colors.purple
                 $(`cell-${this.row}-${this.col}`).style.borderColor = "grey"
@@ -686,6 +700,14 @@ class Cell {
                 let obj = JSON.parse(xhr.responseText);
                 smiley = obj.smiley;
                 bgColor = obj.color;
+
+                // A real smiley is an emoji or an HTML entity — never markup.
+                // Remote endpoints are user-supplied, so treat anything that
+                // looks like HTML as a bad response rather than rendering it.
+                if ((smiley != undefined) &&
+                    ((typeof smiley !== "string") || (smiley.indexOf("<") >= 0))) {
+                    throw new TypeError("bad smiley");
+                }
 
                 if ((obj.errors != undefined) && (obj.errors.length > 0)) {
                     errors = obj.errors.join(",");
@@ -904,7 +926,7 @@ class CellWatcher {
                     bgColor = Cell.colors.yellow
                 }
 
-                $(`smiley-${cell.row}-${cell.col}`).innerHTML = smiley
+                setSmiley($(`smiley-${cell.row}-${cell.col}`), smiley)
                 $(`cell-${cell.row}-${cell.col}`).style.background = bgColor
                 opacity = 0.2
             }

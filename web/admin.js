@@ -34,7 +34,9 @@
     theme: BOOT.theme || (!HAS_BRIDGE && safeLS("faces-admin-theme")) || "dark",
     sidebarCollapsed: BOOT.sidebarCollapsed != null ? !!BOOT.sidebarCollapsed
                       : (!HAS_BRIDGE && safeLS("faces-admin-collapsed") === "1"),
-    cred: { user: BOOT.username || "", pass: BOOT.password || "" },
+    // The app's Settings credentials. The password stays in Swift (Keychain);
+    // JS only knows whether a pair exists and asks the bridge to sign in.
+    cred: { user: BOOT.username || "", has: !!BOOT.hasCredentials, rev: 0 },
     mode: safeLS("faces-admin-mode") || "classic",
     modeAutoDetect: safeLS("faces-admin-mode-auto") !== "0",
     page: "overview",
@@ -84,7 +86,10 @@
         body: body == null ? null : (typeof body === "string" ? body : JSON.stringify(body)),
         binary: !!opts.binary, timeoutMs: opts.timeoutMs || 12000,
       };
-      window.webkit.messageHandlers.adminProxy.postMessage(msg).then(function (reply) {
+      var handler = opts.autoLogin ? window.webkit.messageHandlers.adminAutoLogin
+                                   : window.webkit.messageHandlers.adminProxy;
+      if (opts.autoLogin) msg = { rememberMe: true, timeoutMs: msg.timeoutMs };
+      handler.postMessage(msg).then(function (reply) {
         resolve(reply || { status: 0, error: "empty reply" });
       }).catch(function (err) { resolve({ status: 0, error: String(err) }); });
     });
@@ -137,6 +142,29 @@
     dbgRenderTimer = setTimeout(function () { dbgRenderTimer = null; renderDebug(); }, 250);
   }
 
+  // The Debug page and its HAR export must never hold credentials or the
+  // session cookie: redact them as they're recorded, not at export time.
+  var SECRET_HEADER_RE = /^(set-cookie|cookie|authorization)$/i;
+
+  function redactReqBody(path, bodyStr) {
+    if (bodyStr == null || path.split("?")[0] !== "/api/login") return bodyStr;
+    try {
+      var o = JSON.parse(bodyStr);
+      if (o && typeof o === "object") {
+        if ("password" in o) o.password = "[redacted]";
+        return JSON.stringify(o);
+      }
+    } catch (e) {}
+    return "[redacted]";
+  }
+
+  function redactHeaders(h) {
+    if (!h) return null;
+    var out = {};
+    Object.keys(h).forEach(function (k) { out[k] = SECRET_HEADER_RE.test(k) ? "[redacted]" : h[k]; });
+    return out;
+  }
+
   function rawFetch(method, path, body, opts) {
     var started = Date.now();
     var base = state.endpoint || (HAS_BRIDGE ? "" : location.origin);
@@ -144,7 +172,7 @@
       id: ++dbgSeq,
       startedISO: new Date(started).toISOString(),
       method: method, path: path, url: base + path,
-      reqBody: body == null ? null : (typeof body === "string" ? body : JSON.stringify(body)),
+      reqBody: redactReqBody(path, body == null ? null : (typeof body === "string" ? body : JSON.stringify(body))),
       status: null, durationMs: null, respBody: null, respHeaders: null,
       contentType: "", error: null, pending: true,
     };
@@ -155,7 +183,7 @@
         entry.pending = false;
         entry.status = reply.status || 0;
         entry.durationMs = Date.now() - started;
-        entry.respHeaders = reply.headers || null;
+        entry.respHeaders = redactHeaders(reply.headers);
         entry.error = reply.error || null;
         var h = reply.headers || {};
         entry.contentType = h["Content-Type"] || h["content-type"] || reply.contentType || "";
@@ -170,8 +198,8 @@
     });
   }
 
-  function fetchJSON(method, path, body) {
-    return rawFetch(method, path, body).then(function (reply) {
+  function fetchJSON(method, path, body, opts) {
+    return rawFetch(method, path, body, opts).then(function (reply) {
       var status = reply.status || 0;
       var data = null;
       if (reply.body) { try { data = JSON.parse(reply.body); } catch (e) {} }
@@ -208,6 +236,9 @@
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
+
+  // Coerce a server-supplied number before it lands in markup or an attribute.
+  function num(v, dflt) { var n = Number(v); return isFinite(n) ? n : (dflt == null ? 0 : dflt); }
 
   function decodeEntity(s) {
     if (s == null) return "";
@@ -337,13 +368,20 @@
   // 401 on a normal API call. If the app Settings hold credentials, sign in
   // silently (once per credential set — a failed pair is remembered so bad
   // creds can't loop). Otherwise, or after a failure, show the login card.
+  function canAutoLogin() {
+    return HAS_BRIDGE && !!window.webkit.messageHandlers.adminAutoLogin && state.cred.has;
+  }
+
   function handleUnauthorized() {
-    var u = state.cred.user, p = state.cred.pass;
-    var sig = u + ":" + p;
-    if (u && p && !state._loginPending && !state._autoInFlight && state._autoFailedSig !== sig) {
+    var u = state.cred.user;
+    var sig = u + ":" + state.cred.rev;
+    if (canAutoLogin() && !state._loginPending && !state._autoInFlight && state._autoFailedSig !== sig) {
       state._autoInFlight = true;
       stopPolling();
-      fetchJSON("POST", "/api/login", { username: u, password: p, rememberMe: true }).then(function (r) {
+      // Recorded for the Debug page as a login with a redacted body; the real
+      // request (with the Keychain password) is built and sent by Swift.
+      var shown = { username: u, password: "[redacted]", rememberMe: true };
+      fetchJSON("POST", "/api/login", shown, { autoLogin: true }).then(function (r) {
         state._autoInFlight = false;
         if (r.status >= 200 && r.status < 300) {
           state._autoFailedSig = null;
@@ -384,7 +422,19 @@
     });
   }
 
-  function signOut() { fetchJSON("POST", "/api/logout").then(function () { setAuthRequired(true); }); }
+  // Ask Swift to empty the ephemeral session's cookie jar, so signing out
+  // sticks even when /api/logout fails or the server ignores it.
+  function clearNativeSession() {
+    var mh = HAS_BRIDGE && window.webkit.messageHandlers.clearAdminSession;
+    if (!mh) return Promise.resolve();
+    return mh.postMessage({}).catch(function () {});
+  }
+
+  function signOut() {
+    fetchJSON("POST", "/api/logout").then(function () {
+      return clearNativeSession();
+    }).then(function () { setAuthRequired(true); });
+  }
 
   // ================================================================ nav / theme / sidebar
 
@@ -571,7 +621,7 @@
     Object.keys(src || {}).forEach(function (k) {
       var v = src[k];
       if (v && typeof v === "object" && ("healthy" in v || "latencyMs" in v || "error" in v)) {
-        out[k] = { healthy: v.healthy !== false, latencyMs: v.latencyMs || 0, error: v.error || "" };
+        out[k] = { healthy: v.healthy !== false, latencyMs: num(v.latencyMs), error: v.error || "" };
       }
     });
     return out;
@@ -689,7 +739,7 @@
         (lbl ? '<span class="arrow-lbl">' + esc(lbl) + "</span>" : "") + "&#x2192;</span>";
     }
     var pubSub = pubPaused ? "paused"
-      : (pub && pub.publishIntervalMs != null ? msToRate(pub.publishIntervalMs) + " × " + (pub.publishConcurrency || 1) : lat("publisher"));
+      : (pub && pub.publishIntervalMs != null ? msToRate(num(pub.publishIntervalMs)) + " × " + (num(pub.publishConcurrency) || 1) : lat("publisher"));
     var mysqlSub = my.available === false ? "down"
       : (my.queued != null ? my.queued + " queued" : lat("mysql"));
     var queueSub = q.available === false ? "down"
@@ -896,7 +946,7 @@
       cardAttrs = ' data-fi-scope="' + group.scope + '" data-fi-detail="' + esc(detail) + '" data-fi-label="' + esc(card.label) + '"';
     }
     return '<div class="infra-zone-card' + (selectable ? " fi-selectable" : "") + (cardSel ? " fi-selected" : "") + '"' + cardAttrs + ">" +
-      '<div class="infra-zone-head"' + (selectable ? cardAttrs : "") + ">" + (card.icon || "") + " " + esc(card.label) +
+      '<div class="infra-zone-head"' + (selectable ? cardAttrs : "") + ">" + esc(card.icon || "") + " " + esc(card.label) +
       (card.region ? ' <span class="zone-region">' + esc(card.region) + "</span>" : "") + "</div>" +
       podsHTML + "</div>";
   }
@@ -986,7 +1036,7 @@
     var tiles = [
       { v: fmtCount(my.queued), lbl: "DB Queued", tip: "MySQL rows in state &#39;queued&#39; — published, awaiting delivery" },
       { v: fmtCount(my.acknowledged), lbl: "Delivered", tip: "MySQL rows in state &#39;acknowledged&#39; — delivered to the GUI" },
-      { v: fmtCount(q.depth), lbl: "Queue Depth", tip: "Messages currently buffered in " + (q.backend || "the queue") + " (max " + (q.maxDepth || "?") + ")" },
+      { v: fmtCount(q.depth), lbl: "Queue Depth", tip: "Messages currently buffered in " + esc(q.backend || "the queue") + " (max " + esc(q.maxDepth || "?") + ")" },
       { v: fmtCount(dropped), lbl: "Dropped", tip: "max(0, queued − depth): rows in MySQL no longer in the queue (cap overflow). Re-warm to re-push.", cls: dropped > 500 ? "warn" : "" },
       { v: q.readyRate != null ? q.readyRate + "/s" : "—", lbl: "Pub Rate", tip: "Queue publish (ready) rate" },
       { v: q.deliverRate != null ? q.deliverRate + "/s" : "—", lbl: "Del Rate", tip: "Queue deliver rate" },
@@ -1047,7 +1097,8 @@
   function msToRateSlider(ms) { return Math.max(0, Math.min(100, Math.round(Math.log(Math.max(1, ms)) / Math.LN10 / 3 * 100))); }
 
   function pubRateText(ms, concurrency, podCount) {
-    var total = (1000 / Math.max(1, ms)) * (concurrency || 1) * (podCount || 1);
+    ms = num(ms, 50);
+    var total = (1000 / Math.max(1, ms)) * (num(concurrency) || 1) * (num(podCount) || 1);
     var t = total >= 100 ? Math.round(total) : Math.round(total * 10) / 10;
     return ms + " ms<small>~" + t + " msg/s total</small>";
   }
@@ -1061,14 +1112,14 @@
     var html = "";
 
     var pubDown = !pub || pub.available === false;
-    var pubMs = pub && pub.publishIntervalMs != null ? pub.publishIntervalMs : 50;
+    var pubMs = pub && pub.publishIntervalMs != null ? num(pub.publishIntervalMs, 50) : 50;
     html += '<div class="flowctl-card" data-svc="publisher">' +
       '<div class="flowctl-head">Publisher' +
       '<span class="flowctl-status ' + (pubDown ? "down" : (pub.paused ? "paused" : "")) + '">' +
       (pubDown ? "unavailable" : (pub.paused ? "PAUSED" : "RUNNING")) + "</span></div>" +
       '<div class="flowctl-rate-row"><input type="range" id="flow-pub-rate" min="0" max="100" value="' + msToRateSlider(pubMs) + '"' + (pubDown ? " disabled" : "") + ">" +
       '<span class="flowctl-rate-val" id="flow-pub-rate-val">' + pubRateText(pubMs, pub && pub.publishConcurrency, pub && pub.podCount) + "</span></div>" +
-      '<div class="flowctl-note">Publish interval per goroutine · ' + (pub ? (pub.publishConcurrency || 1) + " goroutine(s) × " + (pub.podCount || 1) + " pod(s)" : "—") + "</div>" +
+      '<div class="flowctl-note">Publish interval per goroutine · ' + (pub ? (num(pub.publishConcurrency) || 1) + " goroutine(s) × " + (num(pub.podCount) || 1) + " pod(s)" : "—") + "</div>" +
       '<div class="flowctl-actions">' +
       '<button class="btn" id="flow-pub-pause"' + (pubDown ? " disabled" : "") + ">" + (pub && pub.paused ? "Resume" : "Pause") + "</button>" +
       '<button class="btn" id="flow-pub-warm"' + (pubDown ? " disabled" : "") + ' data-tooltip="Re-push all pending+queued MySQL rows into the queue (no restart)">Re-warm Queue</button>' +
@@ -1079,7 +1130,7 @@
       '<div class="flowctl-head">Subscriber' +
       '<span class="flowctl-status ' + (subDown ? "down" : (sub.paused ? "paused" : "")) + '">' +
       (subDown ? "unavailable" : (sub.paused ? "PAUSED" : "RUNNING")) + "</span></div>" +
-      '<div class="flowctl-note">' + (sub ? (sub.podCount || 1) + " pod(s) serving the GUI from the queue" : "—") + "</div>" +
+      '<div class="flowctl-note">' + (sub ? (num(sub.podCount) || 1) + " pod(s) serving the GUI from the queue" : "—") + "</div>" +
       '<div class="flowctl-actions">' +
       '<button class="btn" id="flow-sub-pause"' + (subDown ? " disabled" : "") + ">" + (sub && sub.paused ? "Resume" : "Pause") + "</button>" +
       "</div></div>";
@@ -1692,11 +1743,12 @@
       var c = chaos[svc];
       var unavailable = c && c.available === false;
       var cur = c || {};
+      var ef = num(cur.errorFraction), lf = num(cur.latchFraction), mr = num(cur.maxRate);
       var badges = "";
       if (!unavailable) {
-        if (cur.errorFraction > 0) badges += '<span class="fi-fault-badge badge-err">E ' + cur.errorFraction + "%</span>";
+        if (ef > 0) badges += '<span class="fi-fault-badge badge-err">E ' + ef + "%</span>";
         if (cur.delayBuckets && cur.delayBuckets.length) badges += '<span class="fi-fault-badge badge-delay">&#x23F1;</span>';
-        if (cur.maxRate > 0) badges += '<span class="fi-fault-badge badge-rate">&#x1F6A6;' + cur.maxRate + "</span>";
+        if (mr > 0) badges += '<span class="fi-fault-badge badge-rate">&#x1F6A6;' + mr + "</span>";
         if (cur.latched) badges += '<span class="fi-fault-badge badge-latch">&#x1F512;</span>';
       }
       if (unavailable) {
@@ -1714,9 +1766,9 @@
       }).join("");
       return '<div class="fi-card" data-svc="' + esc(svc) + '">' +
         '<div class="fi-card-head">' + esc(svc) + '<span class="fi-card-state">' + badges + "</span></div>" +
-        '<div class="fi-param-row"><span class="fi-param-label">Error %</span><input type="range" data-k="errorFraction" min="0" max="100" value="' + (cur.errorFraction || 0) + '"><span class="fi-param-val">' + (cur.errorFraction || 0) + "%</span></div>" +
-        '<div class="fi-param-row"><span class="fi-param-label">Latch %</span><input type="range" data-k="latchFraction" min="0" max="100" value="' + (cur.latchFraction || 0) + '"><span class="fi-param-val">' + (cur.latchFraction || 0) + "%</span></div>" +
-        '<div class="fi-param-row"><span class="fi-param-label">Max RPS</span><input type="range" data-k="maxRate" min="0" max="500" step="1" value="' + (cur.maxRate || 0) + '"><span class="fi-param-val">' + (cur.maxRate > 0 ? cur.maxRate + " RPS" : "no limit") + "</span></div>" +
+        '<div class="fi-param-row"><span class="fi-param-label">Error %</span><input type="range" data-k="errorFraction" min="0" max="100" value="' + ef + '"><span class="fi-param-val">' + ef + "%</span></div>" +
+        '<div class="fi-param-row"><span class="fi-param-label">Latch %</span><input type="range" data-k="latchFraction" min="0" max="100" value="' + lf + '"><span class="fi-param-val">' + lf + "%</span></div>" +
+        '<div class="fi-param-row"><span class="fi-param-label">Max RPS</span><input type="range" data-k="maxRate" min="0" max="500" step="1" value="' + mr + '"><span class="fi-param-val">' + (mr > 0 ? mr + " RPS" : "no limit") + "</span></div>" +
         '<div class="fi-param-row"><span class="fi-param-label">Delays</span><div class="fi-delay-bubbles">' + delayPills + "</div></div>" +
         fiCardPodsHTML(svc) +
         '<div class="fi-card-actions"><button class="btn btn-primary fi-btn" data-act="apply">Apply</button>' +
@@ -2092,8 +2144,8 @@
     fetchJSON("GET", "/api/maintenance/db/status").then(function (r) {
       var node = $("#db-stat"); if (!node) return;
       if (r.ok && r.data && r.data.connected) {
-        node.innerHTML = "Connected · " + (r.data.latencyMs || 0) + " ms · pending <b>" + (r.data.pending || 0) +
-          "</b> queued <b>" + (r.data.queued || 0) + "</b> acked <b>" + (r.data.acknowledged || 0) + "</b>";
+        node.innerHTML = "Connected · " + num(r.data.latencyMs) + " ms · pending <b>" + num(r.data.pending) +
+          "</b> queued <b>" + num(r.data.queued) + "</b> acked <b>" + num(r.data.acknowledged) + "</b>";
       } else { node.textContent = "Not connected"; }
     });
   }
@@ -2356,11 +2408,12 @@
     if (!s) return;
     if (s.endpoint != null) { state.endpoint = s.endpoint; updateEndpointLabel(); }
     if (s.theme != null) { state.theme = s.theme; applyTheme(); }
-    if (s.username != null || s.password != null) {
+    if (s.username != null || s.hasCredentials != null) {
       if (s.username != null) state.cred.user = s.username;
-      if (s.password != null) state.cred.pass = s.password;
+      if (s.hasCredentials != null) state.cred.has = !!s.hasCredentials;
+      state.cred.rev++;
       state._autoFailedSig = null;   // new creds → allow another auto attempt
-      if (state.authRequired && state.cred.user && state.cred.pass) {
+      if (state.authRequired && canAutoLogin()) {
         setAuthRequired(false);      // hide the card; handleUnauthorized re-shows on failure
         handleUnauthorized();
         return;
