@@ -59,6 +59,8 @@
     debug: { entries: [], paused: true, sel: null, filter: "" },
     showDebugPage: BOOT.showDebugPage != null ? !!BOOT.showDebugPage : (safeLS("faces-admin-show-debug") === "1"),
     fiCardDelays: {},
+    fiCardDrafts: {},      // per-service FI card slider edits not yet applied: svc -> {k: value}
+    fiBusy: 0,             // chaos PUT batches in flight (FI buttons disabled meanwhile)
     ep: {},                // service-endpoint edits in Settings
     _sigs: {},
     _multiBases: {},
@@ -66,6 +68,8 @@
     _autoInFlight: false,  // auto-login attempt running
     _autoFailedSig: null,  // cred signature of the last failed auto-login (loop guard)
     _pendingStreak: 0,     // consecutive polls with mysql.pending > 0 (flow banner)
+    connected: null,       // null until the first poll settles; false = whole main poll failed
+    lastOkAt: 0,           // time of the last main poll with any successful response
   };
 
   document.documentElement.setAttribute("data-theme", state.theme);
@@ -488,7 +492,7 @@
   function doConnect() {
     var v = $("#connect-endpoint").value.trim();
     if (!v) { var er = $("#connect-error"); er.textContent = "Enter an endpoint."; er.style.display = "block"; return; }
-    persistPrefs({ endpoint: v }); state.endpoint = v;
+    persistPrefs({ endpoint: v }); state.endpoint = v; state.lastOkAt = 0;
     $("#connect-overlay").style.display = "none";
     updateEndpointLabel(); pollAll();
   }
@@ -504,41 +508,102 @@
 
   // ================================================================ poll engine
 
-  var timerMain = null, timerInfra = null, timerCtrl = null;
+  // Each loop is a setTimeout chain (never setInterval): the next poll is
+  // scheduled only after the current one settles, so slow responses (12 s
+  // proxy timeout vs a 3 s cadence) can't pile up. Failures back off
+  // exponentially. pollGen bumps on every start/stop (endpoint change, sign-in,
+  // window close); responses from an older generation are dropped unread.
+  var MAX_BACKOFF_MS = 30000;
+  var pollGen = 0;
+
+  function Poller(intervalMs, run) {
+    this.intervalMs = intervalMs; this.run = run;
+    this.timer = null; this.inFlight = 0; this.seq = 0; this.again = false; this.fails = 0;
+  }
+  Poller.prototype.delay = function () {
+    return Math.min(MAX_BACKOFF_MS, this.intervalMs * Math.pow(2, this.fails));
+  };
+  Poller.prototype.schedule = function (ms) {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(this.tick.bind(this), ms);
+  };
+  // Run now. If a run is already in flight, queue exactly one follow-up
+  // instead of overlapping it.
+  Poller.prototype.tick = function () {
+    clearTimeout(this.timer); this.timer = null;
+    if (!pollingEnabled()) return;
+    if (this.inFlight) { this.again = true; return; }
+    var self = this, gen = pollGen, token = ++this.seq;
+    this.inFlight = token;
+    Promise.resolve().then(function () { return self.run(gen); })
+      .then(null, function () { return false; })
+      .then(function (ok) {
+        if (self.inFlight === token) self.inFlight = 0;
+        if (gen !== pollGen) return;            // superseded; the new loop owns the timer
+        self.fails = ok === false ? self.fails + 1 : 0;
+        if (!pollingEnabled()) return;
+        if (self.again) { self.again = false; self.schedule(0); }
+        else self.schedule(self.delay());
+      });
+  };
+  Poller.prototype.stop = function () {
+    clearTimeout(this.timer); this.timer = null;
+    this.inFlight = 0; this.again = false; this.fails = 0;
+  };
+
+  var mainPoller = new Poller(POLL_MAIN_MS, runPollMain);
+  var infraPoller = new Poller(POLL_INFRA_MS, runPollInfra);
+  var ctrlPoller = new Poller(POLL_CTRL_MS, runPollControls);
 
   function pollingEnabled() { return state.active && !state.authRequired && (state.endpoint || !HAS_BRIDGE); }
 
   function startPolling() {
     stopPolling();
     if (!pollingEnabled()) return;
-    pollMain(); pollInfra();
-    timerMain = setInterval(pollMain, POLL_MAIN_MS);
-    timerInfra = setInterval(pollInfra, POLL_INFRA_MS);
-    timerCtrl = setInterval(function () { if (state.page === "controls") pollControlsState(); }, POLL_CTRL_MS);
+    mainPoller.tick(); infraPoller.tick(); ctrlPoller.tick();
   }
   function stopPolling() {
-    if (timerMain) clearInterval(timerMain);
-    if (timerInfra) clearInterval(timerInfra);
-    if (timerCtrl) clearInterval(timerCtrl);
-    timerMain = timerInfra = timerCtrl = null;
+    pollGen++;
+    mainPoller.stop(); infraPoller.stop(); ctrlPoller.stop();
   }
 
   function pollAll() { if (maybeShowConnect()) return; startPolling(); }
 
-  function pollMain() {
-    if (!pollingEnabled()) return;
+  // On-demand refreshes (after a save, mode switch, …) go through the loops so
+  // they respect the in-flight guard.
+  function pollMain() { mainPoller.tick(); }
+  function pollInfra() { infraPoller.tick(); }
+  function pollControlsState() { ctrlPoller.tick(); }
+
+  // Resolves true when at least one request succeeded, false when the whole
+  // poll failed (→ Disconnected + backoff).
+  function runPollMain(gen) {
+    var anyOk = false;
+    function job(path, apply) {
+      return fetchJSON("GET", path).then(function (r) {
+        if (gen !== pollGen) return;            // stale response — drop
+        if (r.ok) anyOk = true;
+        if (r.ok && r.data) apply(r.data);
+      });
+    }
     var jobs = [
-      fetchJSON("GET", "/api/status").then(function (r) { if (r.ok && r.data) state.status = normalizeStatus(r.data); }),
-      fetchJSON("GET", "/api/config").then(function (r) { if (r.ok && r.data) onConfig(r.data); }),
-      fetchJSON("GET", "/api/chaos").then(function (r) { if (r.ok && r.data) state.chaos = r.data; }),
+      job("/api/status", function (d) { state.status = normalizeStatus(d); }),
+      job("/api/config", onConfig),
+      job("/api/chaos", function (d) { state.chaos = d; }),
     ];
     if (state.mode === "pubsub") {
-      jobs.push(fetchJSON("GET", "/api/controls").then(function (r) { if (r.ok && r.data) state.controls = r.data; }));
-      jobs.push(fetchJSON("GET", "/api/pipeline").then(function (r) { if (r.ok && r.data) onPipeline(r.data); }));
+      jobs.push(job("/api/controls", function (d) { state.controls = d; }));
+      jobs.push(job("/api/pipeline", onPipeline));
     }
-    Promise.all(jobs).then(function () {
-      if (state.authRequired) return;
-      setConnected(true); renderHeader(); renderActivePage();
+    return Promise.all(jobs).then(function () {
+      if (gen !== pollGen || state.authRequired) return true;
+      if (anyOk) {
+        state.lastOkAt = Date.now();
+        setConnected(true); renderHeader(); renderActivePage();
+      } else {
+        setConnected(false); renderPollIndicator();
+      }
+      return anyOk;
     });
   }
 
@@ -553,42 +618,48 @@
     else state._pendingStreak = 0;
   }
 
-  function pollInfra() {
-    if (!pollingEnabled()) return;
-    fetchJSON("GET", "/api/infrastructure").then(function (r) {
+  function runPollInfra(gen) {
+    return fetchJSON("GET", "/api/infrastructure").then(function (r) {
+      if (gen !== pollGen) return true;
       if (r.ok && r.data) { state.lastInfra = r.data; recomputeMultiBases(); }
       if (state.page === "overview") renderInfrastructure();
       if (state.page === "faultinjection") { renderFITopology(); renderFIGlobalPanel(); renderFICards(); }
+      return r.ok;
     });
   }
 
-  function pollControlsState() {
-    if (!pollingEnabled() || state.page !== "controls") return;
-    Promise.all([
+  function runPollControls(gen) {
+    if (state.page !== "controls") return true;   // idle tick; setPage() kicks it on entry
+    return Promise.all([
       fetchJSON("GET", "/api/smileypods"), fetchJSON("GET", "/api/smileystate"),
       fetchJSON("GET", "/api/colorpods"), fetchJSON("GET", "/api/colorstate"),
     ]).then(function (rs) {
+      if (gen !== pollGen) return true;
       state.podServing.smileyPods = (rs[0].ok && rs[0].data) || [];
       state.podServing.smiley = (rs[1].ok && rs[1].data) || [];
       state.podServing.colorPods = (rs[2].ok && rs[2].data) || [];
       state.podServing.color = (rs[3].ok && rs[3].data) || [];
       renderPodSelectors();
+      return rs.some(function (r) { return r.ok; });
     });
   }
 
   function setConnected(ok) {
+    state.connected = ok;
     var dot = $("#poll-indicator");
     dot.classList.remove("idle", "ok", "err");
     dot.classList.add(ok ? "ok" : "err");
-    $("#poll-label").textContent = ok ? "Polling" : "Disconnected";
+    $("#poll-label").textContent = ok ? "Polling" : (state.lastOkAt ? "Disconnected \u00B7 stale" : "Disconnected");
+    // Dim the page while it's showing data from the last successful poll.
+    document.body.classList.toggle("admin-stale", !ok && !!state.lastOkAt);
   }
 
   function onConfig(cfg) {
     var prevMode = state.mode;
     state.config = cfg;
-    if (cfg.faceMode === "classic" || cfg.faceMode === "pubsub") {
+    if ((cfg.faceMode === "classic" || cfg.faceMode === "pubsub") && state.modeAutoDetect) {
       safeLSSet("faces-admin-mode", cfg.faceMode);   // remember for next open
-      if (state.modeAutoDetect) state.mode = cfg.faceMode;
+      state.mode = cfg.faceMode;
     }
     $("#sign-out-btn").style.display = cfg.authEnabled ? "flex" : "none";
     $("#nav-flow").style.display = state.mode === "pubsub" ? "" : "none";
@@ -597,6 +668,18 @@
       if (state.page === "flow" && state.mode !== "pubsub") setPage("overview");
       pollInfra();
     }
+  }
+
+  // Switch how this window presents the deployment (local only — the server's
+  // faceMode is changed separately, with confirmation, in Settings).
+  function setDisplayMode(m) {
+    if (m === state.mode) return;
+    state.mode = m;
+    state._sigs = {};
+    $("#nav-flow").style.display = m === "pubsub" ? "" : "none";
+    if (state.page === "flow" && m !== "pubsub") setPage("overview");
+    renderHeader(); renderActivePage();
+    pollMain(); pollInfra();
   }
 
   function recomputeMultiBases() {
@@ -638,12 +721,21 @@
 
   function renderPollIndicator() {
     var c = state.config || {};
-    $("#poll-indicator").setAttribute("data-tooltip", [
-      "Namespace: " + (c.namespace || "—"),
-      "Linkerd: " + (c.linkerdMeshed ? "meshed" : "not meshed"),
-      "K8s API: " + (c.k8sAvailable ? "\u2713 connected" : "\u2717 unavailable"),
-      "Poll: every 3s",
-    ].join("\\n"));
+    var lines;
+    if (state.connected === false) {
+      lines = ["No response from " + (state.endpoint || "server"),
+               state.lastOkAt ? "Showing data from " + Math.round((Date.now() - state.lastOkAt) / 1000) + "s ago"
+                              : "No data received yet",
+               "Retrying with backoff (up to " + MAX_BACKOFF_MS / 1000 + "s)"];
+    } else {
+      lines = [
+        "Namespace: " + (c.namespace || "—"),
+        "Linkerd: " + (c.linkerdMeshed ? "meshed" : "not meshed"),
+        "K8s API: " + (c.k8sAvailable ? "\u2713 connected" : "\u2717 unavailable"),
+        "Poll: every " + Math.round(POLL_MAIN_MS / 1000) + "s",
+      ];
+    }
+    $("#poll-indicator").setAttribute("data-tooltip", lines.join("\\n"));
   }
 
   function renderHealthChips() {
@@ -1618,6 +1710,11 @@
 
   function renderFIGlobalPanel() {
     var svcs = chaosServices();
+    // Drop services the current mode doesn't have (e.g. "face" after a
+    // classic→pubsub switch) so Apply can't target them invisibly.
+    Object.keys(state.fi.services).forEach(function (k) {
+      if (svcs.indexOf(k) < 0) delete state.fi.services[k];
+    });
     // default-select smiley if nothing selected yet
     if (!Object.keys(state.fi.services).some(function (k) { return state.fi.services[k]; })) {
       state.fi.services = {}; state.fi.services[svcs[0]] = true;
@@ -1639,6 +1736,7 @@
       '<button class="btn" id="fi-g-reset-scope">↺ All pods</button></div>';
     repaint("fiGlobal", $("#fi-global-panel"), html);
     wireFIGlobalPanel();
+    syncFIBusy();
   }
 
   function wireFIGlobalPanel() {
@@ -1666,10 +1764,19 @@
     var delays = FI_DELAYS.filter(function (d) { return state.fi.delays[d]; });
     var body = { errorFraction: state.fi.error, latchFraction: state.fi.latch, maxRate: state.fi.maxRate, delayBuckets: delays };
     var targets = resolveScopeTargets();
-    applyChaosToServices(svcs, body, targets);
+    applyChaosToServices(svcs, body, targets, state.fi.label);
   }
 
-  function applyChaosToServices(svcs, body, targets) {
+  // Disable every fault-injection action while a batch is in flight, so a
+  // double click can't send overlapping (possibly contradictory) chaos PUTs.
+  function syncFIBusy() {
+    var busy = state.fiBusy > 0;
+    $all("#fi-global-panel button, #fi-cards .fi-btn, #fi-scenarios .scenario-btn").forEach(function (b) { b.disabled = busy; });
+  }
+
+  // scopeLabel names the topology scope for the "nothing to apply" message.
+  function applyChaosToServices(svcs, body, targets, scopeLabel) {
+    if (state.fiBusy) return;
     var jobs = svcs.map(function (svc) {
       var b = {};
       Object.keys(body).forEach(function (k) { b[k] = body[k]; });
@@ -1680,11 +1787,20 @@
       }
       return fetchJSON("PUT", "/api/chaos/" + svc, b).then(function (r) { return { svc: svc, r: r }; });
     });
+    state.fiBusy++; syncFIBusy();
     Promise.all(jobs).then(function (results) {
+      state.fiBusy--; syncFIBusy();
+      var skipped = results.filter(function (x) { return x.skipped; }).map(function (x) { return x.svc; });
+      var where = scopeLabel ? " in " + scopeLabel : " in the selected scope";
+      if (skipped.length === results.length) {
+        showToast("Nothing applied \u2014 no " + skipped.join("/") + " pods" + where + ".", "warn");
+        return;
+      }
+      if (skipped.length) showToast("Skipped " + skipped.join(", ") + ": no pods" + where + ".", "warn");
       results.forEach(function (x) {
         if (x.skipped) return;
         if (x.r.ok) showToast(chaosPodStatusText(x.r.data) + " · " + x.svc, chaosPodStatusKind(x.r.data));
-        else showToast("Failed: " + x.svc, "error");
+        else showToast("Failed: " + x.svc + (x.r.status ? " (HTTP " + x.r.status + ")" : x.r.error ? " (" + x.r.error + ")" : ""), "error");
       });
       refreshFITopologyBadges();
     });
@@ -1761,14 +1877,22 @@
         state.fiCardDelays[svc] = initD;
       }
       var cd = state.fiCardDelays[svc];
+      // Unapplied slider edits survive repaints (pod-pill clicks, polls).
+      var dr = state.fiCardDrafts[svc] || {};
+      var v = {
+        errorFraction: dr.errorFraction != null ? num(dr.errorFraction) : ef,
+        latchFraction: dr.latchFraction != null ? num(dr.latchFraction) : lf,
+        maxRate: dr.maxRate != null ? num(dr.maxRate) : mr,
+      };
+      var edited = Object.keys(dr).length ? '<span class="fi-card-edited" data-tooltip="Slider changes not applied yet">edited</span>' : "";
       var delayPills = FI_DELAYS.map(function (d) {
         return '<span class="fi-delay-bubble' + (cd[d] ? " active" : "") + '" data-card-delay="' + d + '">' + d + "</span>";
       }).join("");
       return '<div class="fi-card" data-svc="' + esc(svc) + '">' +
-        '<div class="fi-card-head">' + esc(svc) + '<span class="fi-card-state">' + badges + "</span></div>" +
-        '<div class="fi-param-row"><span class="fi-param-label">Error %</span><input type="range" data-k="errorFraction" min="0" max="100" value="' + ef + '"><span class="fi-param-val">' + ef + "%</span></div>" +
-        '<div class="fi-param-row"><span class="fi-param-label">Latch %</span><input type="range" data-k="latchFraction" min="0" max="100" value="' + lf + '"><span class="fi-param-val">' + lf + "%</span></div>" +
-        '<div class="fi-param-row"><span class="fi-param-label">Max RPS</span><input type="range" data-k="maxRate" min="0" max="500" step="1" value="' + mr + '"><span class="fi-param-val">' + (mr > 0 ? mr + " RPS" : "no limit") + "</span></div>" +
+        '<div class="fi-card-head">' + esc(svc) + edited + '<span class="fi-card-state">' + badges + "</span></div>" +
+        '<div class="fi-param-row"><span class="fi-param-label">Error %</span><input type="range" data-k="errorFraction" min="0" max="100" value="' + v.errorFraction + '"><span class="fi-param-val">' + v.errorFraction + "%</span></div>" +
+        '<div class="fi-param-row"><span class="fi-param-label">Latch %</span><input type="range" data-k="latchFraction" min="0" max="100" value="' + v.latchFraction + '"><span class="fi-param-val">' + v.latchFraction + "%</span></div>" +
+        '<div class="fi-param-row"><span class="fi-param-label">Max RPS</span><input type="range" data-k="maxRate" min="0" max="500" step="1" value="' + v.maxRate + '"><span class="fi-param-val">' + (v.maxRate > 0 ? v.maxRate + " RPS" : "no limit") + "</span></div>" +
         '<div class="fi-param-row"><span class="fi-param-label">Delays</span><div class="fi-delay-bubbles">' + delayPills + "</div></div>" +
         fiCardPodsHTML(svc) +
         '<div class="fi-card-actions"><button class="btn btn-primary fi-btn" data-act="apply">Apply</button>' +
@@ -1780,6 +1904,7 @@
     if (focusInCards) return;
     repaint("fiCards", $("#fi-cards"), html);
     wireFICards();
+    syncFIBusy();
   }
 
   function wireFICards() {
@@ -1792,6 +1917,8 @@
       if (val && e.target.type === "range") {
         var k = e.target.getAttribute("data-k");
         val.textContent = k === "maxRate" ? (+e.target.value > 0 ? e.target.value + " RPS" : "no limit") : e.target.value + "%";
+        var card = e.target.closest(".fi-card"), svc = card && card.getAttribute("data-svc");
+        if (svc) (state.fiCardDrafts[svc] || (state.fiCardDrafts[svc] = {}))[k] = +e.target.value;
       }
     });
     grid.addEventListener("click", function (e) {
@@ -1825,7 +1952,9 @@
       var act = btn.getAttribute("data-act");
       var ips = fiCardSelectedIPs(svc);
       var targets = ips.length ? (function (m) { m[svc] = ips; return m; })({}) : null;
+      if (state.fiBusy) return;
       if (act === "reset") {
+        delete state.fiCardDrafts[svc];   // reset → follow server values again
         delete state.fiCardDelays[svc];
         applyChaosToServices([svc], { errorFraction: 0, latchFraction: 0, maxRate: 0, delayBuckets: [], forceUnlatch: true }, null);
       } else if (act === "unlatch") {
@@ -1840,6 +1969,7 @@
         var cd2 = state.fiCardDelays[svc] || {};
         body.delayBuckets = Object.keys(cd2).filter(function (k) { return cd2[k]; }).map(Number).sort(function (a, b) { return a - b; });
         delete state.fiCardDelays[svc];   // re-sync from fresh chaos after apply
+        delete state.fiCardDrafts[svc];
         applyChaosToServices([svc], body, targets);
       }
     });
@@ -1883,6 +2013,7 @@
     });
 
     repaint("fiScen", $("#fi-scenarios"), rows);
+    syncFIBusy();
     var panel = $("#fi-scenarios");
     // Stash the LATEST quick set on the (stable) panel node so the once-wired
     // click handler doesn't act on a stale closure after a classic↔pubsub mode
@@ -1900,12 +2031,13 @@
         }
         // zone/node scoped scenario
         var scope = b.getAttribute("data-scope"), detail = b.getAttribute("data-detail"), kind = b.getAttribute("data-kind");
+        var label = b.getAttribute("data-label") || detail;
         var savedScope = state.fi.scope, savedDetail = state.fi.detail;
         state.fi.scope = scope; state.fi.detail = detail;
         var targets = resolveScopeTargets();
         state.fi.scope = savedScope; state.fi.detail = savedDetail;
         var body = kind === "outage" ? fullChaosBody({ errorFraction: 100 }) : fullChaosBody({ delayBuckets: [1000, 2000] });
-        applyChaosToServices(chaosServices(), body, targets);
+        applyChaosToServices(chaosServices(), body, targets, label);
       });
     }
   }
@@ -2106,7 +2238,7 @@
       $("#set-conn").addEventListener("click", function (e) {
         if (e.target.id !== "conn-save") return;
         var v = $("#conn-endpoint").value.trim();
-        persistPrefs({ endpoint: v }); state.endpoint = v;
+        persistPrefs({ endpoint: v }); state.endpoint = v; state.lastOkAt = 0;
         updateEndpointLabel(); state._sigs = {}; pollAll();
         showToast("Endpoint updated", "success");
       });
@@ -2178,6 +2310,17 @@
     { k: "publisherURL", lbl: "Publisher" }, { k: "subscriberURL", lbl: "Subscriber" },
   ];
 
+  // Edited endpoint fields that differ from the server's current value. An
+  // empty PUT /api/config means "reset all overrides", so Save must never
+  // send {} — it's disabled until something is dirty and sends only these.
+  function dirtyEndpoints() {
+    var cfg = state.config || {}, out = {};
+    Object.keys(state.ep).forEach(function (k) {
+      if (state.ep[k] != null && state.ep[k] !== (cfg[k] || "")) out[k] = state.ep[k];
+    });
+    return out;
+  }
+
   function renderServiceEndpoints() {
     var cfg = state.config || {};
     var rows = EP_FIELDS.map(function (f) {
@@ -2188,7 +2331,8 @@
         '<span class="ep-badge">modified</span></div>';
     }).join("");
     var html = '<div class="set-card">' + rows +
-      '<div class="set-actions"><button class="btn btn-primary" id="ep-save">Save Changes</button>' +
+      '<div class="set-actions"><button class="btn btn-primary" id="ep-save"' +
+      (Object.keys(dirtyEndpoints()).length ? "" : " disabled") + '>Save Changes</button>' +
       '<button class="btn" id="ep-reset">Reset to Defaults</button></div></div>';
     var focusInEp = document.activeElement && document.activeElement.closest && document.activeElement.closest("#set-endpoints");
     if (focusInEp) return;
@@ -2200,10 +2344,13 @@
         var k = row.getAttribute("data-k"); state.ep[k] = e.target.value;
         var cfg2 = state.config || {};
         row.classList.toggle("modified", state.ep[k] !== (cfg2[k] || ""));
+        var save = $("#ep-save"); if (save) save.disabled = !Object.keys(dirtyEndpoints()).length;
       });
       $("#set-endpoints").addEventListener("click", function (e) {
         if (e.target.id === "ep-save") {
-          var body = {}; Object.keys(state.ep).forEach(function (k) { body[k] = state.ep[k]; });
+          var body = dirtyEndpoints();
+          if (!Object.keys(body).length) return;   // never an empty PUT (= reset)
+          e.target.disabled = true;
           fetchJSON("PUT", "/api/config", body).then(function (r) { showToast(r.ok ? "Endpoints saved" : "Save failed", r.ok ? "success" : "error"); state.ep = {}; state._sigs.setEp = null; pollMain(); });
         } else if (e.target.id === "ep-reset") {
           fetchJSON("PUT", "/api/config", {}).then(function (r) { showToast(r.ok ? "Endpoints reset" : "Reset failed", r.ok ? "success" : "error"); state.ep = {}; state._sigs.setEp = null; pollMain(); });
@@ -2214,12 +2361,22 @@
 
   function renderActiveConfig() {
     var cfg = state.config || {};
+    // Two different things, kept apart: the server's faceMode (a PUT that
+    // changes the live deployment for everyone) and, when auto-detect is off,
+    // how this window displays it (local only).
+    var serverMode = cfg.faceMode;
     var modeToggle =
-      '<label class="evoto-toggle-row" style="margin-bottom:10px"><input type="checkbox" id="mode-auto-detect"' + (state.modeAutoDetect ? " checked" : "") + '> Auto-detect mode from server <span style="color:var(--text-muted);font-size:11px">(reads <code>/api/config</code>)</span></label>' +
-      '<div class="mode-toggle-row"><span class="mode-toggle-label">Admin display mode:</span>' +
+      '<div class="mode-toggle-row"><span class="mode-toggle-label">Server face mode:</span>' +
       '<div class="target-toggle" id="mode-toggle">' +
-      '<button class="toggle-btn' + (state.mode === "classic" ? " active" : "") + '" data-mode="classic">Classic</button>' +
-      '<button class="toggle-btn' + (state.mode === "pubsub" ? " active" : "") + '" data-mode="pubsub">Pub·Sub</button></div></div>';
+      '<button class="toggle-btn' + (serverMode === "classic" ? " active" : "") + '" data-mode="classic">Classic</button>' +
+      '<button class="toggle-btn' + (serverMode === "pubsub" ? " active" : "") + '" data-mode="pubsub">Pub·Sub</button></div></div>' +
+      '<div class="conn-note" style="margin:-4px 0 10px">Changes <code>faceMode</code> on the faces-admin server &mdash; this switches the running demo for everyone, not just this window.</div>' +
+      '<label class="evoto-toggle-row" style="margin-bottom:10px"><input type="checkbox" id="mode-auto-detect"' + (state.modeAutoDetect ? " checked" : "") + '> Display the server&rsquo;s mode automatically <span style="color:var(--text-muted);font-size:11px">(reads <code>/api/config</code>)</span></label>' +
+      (state.modeAutoDetect ? "" :
+        '<div class="mode-toggle-row"><span class="mode-toggle-label">Display as (this window only):</span>' +
+        '<div class="target-toggle" id="display-mode-toggle">' +
+        '<button class="toggle-btn' + (state.mode === "classic" ? " active" : "") + '" data-display-mode="classic">Classic</button>' +
+        '<button class="toggle-btn' + (state.mode === "pubsub" ? " active" : "") + '" data-display-mode="pubsub">Pub·Sub</button></div></div>');
     var rowKeys = ["faceMode", "queueBackend", "namespace", "k8sAvailable", "linkerdMeshed", "authEnabled",
                    "smileyURL", "colorURL", "faceURL", "guiURL", "publisherURL", "subscriberURL", "maxDepth"];
     var rows = rowKeys.filter(function (k) { return cfg[k] != null; }).map(function (k) {
@@ -2237,18 +2394,33 @@
           // immediately apply the server's mode if we have it
           var fm = state.config && state.config.faceMode;
           if (fm === "classic" || fm === "pubsub") {
-            state.mode = fm;
-            state._sigs = {};
-            pollMain();
+            safeLSSet("faces-admin-mode", fm);
+            setDisplayMode(fm);
           }
         }
+        state._sigs.setCfg = null; renderActiveConfig();   // show/hide the display override
       });
       $("#set-config").addEventListener("click", function (e) {
+        var d = e.target.closest(".toggle-btn[data-display-mode]");
+        if (d) {
+          var dm = d.getAttribute("data-display-mode");
+          safeLSSet("faces-admin-mode", dm);
+          setDisplayMode(dm);
+          return;
+        }
         var b = e.target.closest(".toggle-btn[data-mode]"); if (!b) return;
         var m = b.getAttribute("data-mode");
-        fetchJSON("PUT", "/api/config", { faceMode: m }).then(function (r) {
-          showToast(r.ok ? "Mode set to " + m : "Mode change failed", r.ok ? "success" : "error");
-          state._sigs = {}; pollMain(); pollInfra();
+        if (state.config && state.config.faceMode === m) return;   // already there
+        var label = m === "pubsub" ? "Pub\u00B7Sub" : "Classic";
+        confirmModal("Switch the server to " + label + " mode?",
+          "This sets faceMode=" + m + " on the faces-admin server at " + (state.endpoint || "this origin") +
+          ". The running faces demo changes for everyone using this deployment, not just this window.", true
+        ).then(function (ok) {
+          if (!ok) return;
+          fetchJSON("PUT", "/api/config", { faceMode: m }).then(function (r) {
+            showToast(r.ok ? "Server mode set to " + label : "Mode change failed", r.ok ? "success" : "error");
+            state._sigs = {}; pollMain(); pollInfra();
+          });
         });
       });
     }
@@ -2406,7 +2578,10 @@
   };
   window.__adminApplyNativeSettings__ = function (s) {
     if (!s) return;
-    if (s.endpoint != null) { state.endpoint = s.endpoint; updateEndpointLabel(); }
+    if (s.endpoint != null) {
+      if (s.endpoint !== state.endpoint) state.lastOkAt = 0;
+      state.endpoint = s.endpoint; updateEndpointLabel();
+    }
     if (s.theme != null) { state.theme = s.theme; applyTheme(); }
     if (s.username != null || s.hasCredentials != null) {
       if (s.username != null) state.cred.user = s.username;

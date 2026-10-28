@@ -316,20 +316,28 @@ private struct ServicesTab: View {
                     .help("Simulator: built-in fake services (no cluster needed). Remote: a real face endpoint.")
 
                     if config.connectionMode == ConnectionMode.remote.rawValue {
-                        TextField("host:port or http://...", text: $config.endpoint)
+                        // Edits stay local until Return / Connect / Test — binding
+                        // straight to config.endpoint pointed the live face proxy
+                        // at every partial host typed along the way.
+                        TextField("host:port or http://...", text: $draftEndpoint)
                             .textFieldStyle(.roundedBorder)
                             .font(.system(.body, design: .monospaced))
-                            .help("The face service endpoint. http:// is assumed if omitted.")
+                            .help("The face service endpoint. http:// is assumed if omitted. Press Return or Connect to apply.")
                             .onSubmit { connect() }
 
                         HStack(spacing: 8) {
                             Button("Connect") { connect() }
                                 .help("Save endpoint and reload")
-                            Button("Test") { config.save(); controller.testConnection() }
+                            Button("Test") { commitEndpoint(); controller.testConnection() }
                                 .help("Send a test request and show the response")
                             Spacer()
                             StatusPill(kind: controller.connectionStatusKind,
                                        text: controller.connectionStatus)
+                        }
+                        if draftEndpoint != config.endpoint {
+                            Text("Endpoint not applied yet — press Return or Connect.")
+                                .font(.caption)
+                                .foregroundColor(.orange)
                         }
                         if controller.lastRemoteStatusCode > 0 {
                             Text("HTTP \(controller.lastRemoteStatusCode) · \(controller.lastRemoteLatencyMs) ms")
@@ -391,24 +399,29 @@ private struct ServicesTab: View {
                     Text("Operate a deployed faces-admin server (health, controls, fault injection) in a separate window.")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    TextField("host:8888 or http://host", text: $config.adminEndpoint)
+                    // Admin fields commit on Return or ~500 ms after the last
+                    // keystroke, so an open Admin window doesn't re-point / re-login
+                    // on every character.
+                    TextField("host:8888 or http://host", text: $draftAdminEndpoint)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(.body, design: .monospaced))
                         .help("The faces-admin service endpoint (port 8888, or the K8s Service on 80). http:// is assumed.")
-                        .onSubmit { saveAdmin() }
+                        .onSubmit { commitAdmin() }
                     HStack(spacing: 8) {
-                        TextField("Username", text: $config.adminUsername)
+                        TextField("Username", text: $draftAdminUsername)
                             .textFieldStyle(.roundedBorder)
                             .help("faces-admin username (only needed when the server has auth enabled).")
-                        SecureField("Password", text: $config.adminPassword)
+                            .onSubmit { commitAdmin() }
+                        SecureField("Password", text: $draftAdminPassword)
                             .textFieldStyle(.roundedBorder)
                             .help("faces-admin password. Stored in the macOS Keychain for automatic sign-in.")
+                            .onSubmit { commitAdmin() }
                     }
                     Text("With credentials set, the Admin window signs in automatically — no login prompt.")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Button("Open Admin Window") {
-                        saveAdmin()
+                        commitAdmin()
                         controller.openAdminWindow()
                     }
                     .help("Open the admin portal. You can also use ⌘⇧A.")
@@ -426,14 +439,70 @@ private struct ServicesTab: View {
         .onChange(of: config.face)           { _ in live() }
         .onChange(of: config.smiley)         { _ in live() }
         .onChange(of: config.color)          { _ in live() }
-        .onChange(of: config.adminEndpoint)  { _ in saveAdmin() }
-        .onChange(of: config.adminUsername)  { _ in saveAdmin() }
-        .onChange(of: config.adminPassword)  { _ in saveAdmin() }
+        // Keep drafts in step with changes made elsewhere (Reset All, the Admin
+        // window's own endpoint editor). After a commit these equal the draft.
+        .onAppear(perform: loadDrafts)
+        .onChange(of: config.endpoint)       { draftEndpoint = $0 }
+        .onChange(of: config.adminEndpoint)  { draftAdminEndpoint = $0 }
+        .onChange(of: config.adminUsername)  { draftAdminUsername = $0 }
+        .onChange(of: config.adminPassword)  { draftAdminPassword = $0 }
+        // Debounced admin commit: restarts on every keystroke, fires after 500 ms idle.
+        .task(id: AdminDraft(endpoint: draftAdminEndpoint, username: draftAdminUsername,
+                             password: draftAdminPassword)) {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            if !Task.isCancelled { commitAdmin() }
+        }
+        // Closing the panel / switching tab keeps what was typed.
+        .onDisappear {
+            commitAdmin()
+            if draftEndpoint != config.endpoint { config.endpoint = draftEndpoint; config.save() }
+        }
     }
 
-    private func connect() { config.save(); controller.scheduleReload(); controller.testConnection() }
+    @State private var draftEndpoint: String
+    @State private var draftAdminEndpoint: String
+    @State private var draftAdminUsername: String
+    @State private var draftAdminPassword: String
+
+    init(config: FacesConfig, controller: WebController) {
+        self.config = config
+        self.controller = controller
+        // Seed from config up front so the debounced commit can never see blanks.
+        _draftEndpoint      = State(initialValue: config.endpoint)
+        _draftAdminEndpoint = State(initialValue: config.adminEndpoint)
+        _draftAdminUsername = State(initialValue: config.adminUsername)
+        _draftAdminPassword = State(initialValue: config.adminPassword)
+    }
+
+    private struct AdminDraft: Equatable { let endpoint, username, password: String }
+
+    private func loadDrafts() {
+        draftEndpoint      = config.endpoint
+        draftAdminEndpoint = config.adminEndpoint
+        draftAdminUsername = config.adminUsername
+        draftAdminPassword = config.adminPassword
+    }
+
+    private func commitEndpoint() {
+        if config.endpoint != draftEndpoint { config.endpoint = draftEndpoint }
+        config.save()
+    }
+
+    private func connect() { commitEndpoint(); controller.scheduleReload(); controller.testConnection() }
     private func live()    { config.save(); controller.pushLiveSettings() }
-    private func saveAdmin() { config.save(); controller.pushAdminNativeSettings() }
+
+    /// Write the admin drafts to config and push them to an open Admin window —
+    /// only when something actually changed (the debounce also fires on appear).
+    private func commitAdmin() {
+        guard draftAdminEndpoint != config.adminEndpoint
+                || draftAdminUsername != config.adminUsername
+                || draftAdminPassword != config.adminPassword else { return }
+        config.adminEndpoint = draftAdminEndpoint
+        config.adminUsername = draftAdminUsername
+        config.adminPassword = draftAdminPassword
+        config.save()
+        controller.pushAdminNativeSettings()
+    }
 }
 
 // MARK: - Advanced tab
@@ -453,8 +522,13 @@ private struct AdvancedTab: View {
                         Text("User")
                             .font(.system(size: 13))
                             .frame(width: 110, alignment: .leading)
-                        TextField("unknown", text: $config.user)
+                        // Local draft, committed on Return / focus loss: pushing every
+                        // keystroke through JS trimmed spaces and turned an emptied
+                        // field into "unknown" while the user was still typing.
+                        TextField("unknown", text: $draftUser)
                             .textFieldStyle(.roundedBorder)
+                            .focused($userFocused)
+                            .onSubmit { commitUser() }
                     }
                     .help("The X-Faces-User header sent with every request. Leave blank / 'unknown' to hide the user pill in the toolbar.")
                 }
@@ -477,7 +551,7 @@ private struct AdvancedTab: View {
                         .help("Open the network debug panel in a separate floating window.")
 
                     ToggleRow("Crash reporting", isOn: $config.crashReportingEnabled)
-                        .help("Write crash logs to ~/Library/Application Support/Faces/CrashLogs/.")
+                        .help("Log uncaught Objective-C exceptions to ~/Library/Application Support/Faces/CrashLogs/. Swift traps and signal crashes go to macOS DiagnosticReports instead.")
 
                     Button("Show Crash Logs…") {
                         if let dir = CrashReporter.crashLogDirectory() {
@@ -501,6 +575,7 @@ private struct AdvancedTab: View {
                         Button("Reset Everything", role: .destructive) {
                             config.resetAll()
                             controller.reloadWithSettings()
+                            controller.pushAdminNativeSettings()   // cleared endpoint/creds reach an open Admin window
                         }
                         Button("Cancel", role: .cancel) {}
                     } message: {
@@ -512,10 +587,39 @@ private struct AdvancedTab: View {
             }
             .padding(20)
         }
-        .onChange(of: config.crashReportingEnabled) { _ in config.save() }
-        .onChange(of: config.user)               { _ in config.save(); controller.pushUser() }
+        .onChange(of: config.crashReportingEnabled) { on in
+            config.save()
+            CrashReporter.setEnabled(on)
+        }
+        // The toolbar pill / Reset All change config.user directly — mirror it.
+        .onChange(of: config.user)               { if !userFocused { draftUser = Self.display($0) } }
+        .onChange(of: userFocused)               { if !$0 { commitUser() } }
+        .onDisappear { commitUser() }
         .onChange(of: config.showDebugButton)    { _ in config.save(); controller.pushLiveSettings() }
         .onChange(of: config.showSettingsButton) { _ in config.save(); controller.pushLiveSettings() }
+    }
+
+    @State private var draftUser: String
+    @FocusState private var userFocused: Bool
+
+    init(config: FacesConfig, controller: WebController) {
+        self.config = config
+        self.controller = controller
+        _draftUser = State(initialValue: Self.display(config.user))
+    }
+
+    /// "unknown" means unset — show the placeholder rather than the sentinel.
+    private static func display(_ user: String) -> String { user == "unknown" ? "" : user }
+
+    /// Normalise exactly as toolbar.js does (trim, blank → "unknown") so the
+    /// JS echo back through setUser is a no-op.
+    private func commitUser() {
+        let trimmed = draftUser.trimmingCharacters(in: .whitespacesAndNewlines)
+        let next = trimmed.isEmpty ? "unknown" : trimmed
+        guard next != config.user else { return }
+        config.user = next
+        config.save()
+        controller.pushUser()
     }
 }
 
