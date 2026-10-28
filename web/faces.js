@@ -69,6 +69,9 @@ let CELL_INTERVAL = Math.floor(PAINT_INTERVAL_MS / (NUM_ROWS * NUM_COLS))
 // the scene intact. Updated by window.__applyPollSettings__ (called from Swift).
 let EFFECTIVE_INTERVAL = PAINT_INTERVAL_MS;
 
+// Every Cell, so __applyPollSettings__ can retime their pending polls.
+let LIVE_CELLS = [];
+
 // Cell pulse: briefly highlight a grid cell when it repaints (legacy/classic
 // grid modes), so updates are easy to spot. Toggleable live via
 // __applyPollSettings__; defaults on.
@@ -300,8 +303,10 @@ class PodInfo {
             bumpCounter = true
         }
         else if (status == 429) {
-            smiley = Cell.smilies.sleeping
-            bgColor = Cell.colors.red
+            // Rate-limited: same overwhelmed look as the grid cells (kaboom on
+            // yellow), not the sleeping/red timeout face.
+            smiley = Cell.smilies.kaboom
+            bgColor = Cell.colors.yellow
             bumpCounter = true
         }
         else if (status == 200) {
@@ -453,6 +458,9 @@ class Cell {
         this.fetchURL = fetchURL
         this.count = 0
         this.pending = false
+        this.timer = null       // the pending poll's setTimeout id
+        this.lastSentAt = 0     // when the last request went out (ms epoch)
+        this.gen = 0            // bumps per request / restart; stale responses don't reschedule
 
         this.row = row
         this.col = col
@@ -494,16 +502,21 @@ class Cell {
 
     becomeActive() {
         // Start the cell's update loop after an initial delay based
-        // on its position in the grid.
-        setTimeout(() => { this.run() }, (this.row * ROW_INTERVAL) + (this.col * CELL_INTERVAL))
+        // on its position in the grid. Replaces any poll still pending from
+        // before a Stop, and orphans any request still in flight, so a quick
+        // Stop → Start never ends up with two loops for one cell.
+        clearTimeout(this.timer)
+        this.gen++
+        this.pending = true
+        this.timer = setTimeout(() => { this.run() }, (this.row * ROW_INTERVAL) + (this.col * CELL_INTERVAL))
     }
 
-    reschedule(latency) {
+    reschedule(latency, gen) {
         if (!this.sw.active) {
             return
         }
 
-        if (this.pending) {
+        if (this.pending || gen !== this.gen) {
             return
         }
 
@@ -513,18 +526,36 @@ class Cell {
         }
 
         this.pending = true
-        setTimeout(() => { this.run() }, toWait)
+        this.timer = setTimeout(() => { this.run() }, toWait)
+    }
+
+    // Called when EFFECTIVE_INTERVAL changes: move a poll that is waiting out
+    // the OLD interval (up to ~32s) to the new one, measured from the last send.
+    retime() {
+        if (!this.pending || !this.timer || !this.lastSentAt) {
+            return
+        }
+        clearTimeout(this.timer)
+        const toWait = Math.max(0, this.lastSentAt + EFFECTIVE_INTERVAL - Date.now())
+        this.timer = setTimeout(() => { this.run() }, toWait)
     }
 
     // Run can be called manually, but it's most useful when used as the
     // callable of a Timer.
     run() {
         this.pending = false
+        this.timer = null
+        // Stopped while this poll was pending: don't fire one extra request.
+        if (!this.sw.active) {
+            return
+        }
         // this.info("Setting up XHR...")
 
         let xhr = new XMLHttpRequest();
         let xhrName = this.name()
         let sentAt = new Date().getTime()
+        let gen = ++this.gen
+        this.lastSentAt = sentAt
         this.count++;
 
         xhr.addEventListener("load", () => {
@@ -613,7 +644,7 @@ class Cell {
                 }, 50)
             }
 
-            this.reschedule(latency)
+            this.reschedule(latency, gen)
         })
 
         xhr.addEventListener("error", () => {
@@ -640,7 +671,7 @@ class Cell {
                 pulseCell($(`cell-${this.row}-${this.col}`))
             }, 50)
 
-            this.reschedule(latency)
+            this.reschedule(latency, gen)
         })
 
         // Here's where we actually prep and send the request...
@@ -1008,13 +1039,12 @@ function initializeFaces() {
         let keyPopupBody = $("keyPopupBody");
         let btnCloseKey = $("btnCloseKey");
 
-        let keyCreated = false;
-
         btnShowKey.onclick = () => {
-            // Create key in popup if not already created
-            if (!keyCreated) {
+            // (Re)build the key whenever the popup body is empty — Legacy mode
+            // moves these nodes into the inline #key, so a one-shot flag would
+            // leave the popup blank after a Legacy → Modern round-trip.
+            if (!keyPopupBody.firstElementChild) {
                 new Key(keyPopupBody);
-                keyCreated = true;
             }
             keyPopup.style.display = "flex";
         };
@@ -1045,6 +1075,7 @@ function initializeFaces() {
     new CellWatcher(logger, sw, cells, podSet)
 
     sw.cells = cells
+    LIVE_CELLS = cells
 
     document.getElementById('copyright-year').textContent = new Date().getFullYear();
 
@@ -1066,7 +1097,13 @@ window.__applyPollSettings__ = function (json) {
     try {
         const s = typeof json === "string" ? JSON.parse(json) : (json || {});
         const ms = Number(s.paintIntervalMs);
-        if (isFinite(ms) && ms > 0) EFFECTIVE_INTERVAL = Math.max(20, Math.round(ms));
+        if (isFinite(ms) && ms > 0) {
+            const next = Math.max(20, Math.round(ms));
+            if (next !== EFFECTIVE_INTERVAL) {
+                EFFECTIVE_INTERVAL = next;
+                for (const cell of LIVE_CELLS) cell.retime();
+            }
+        }
         if (typeof s.cellPulse !== "undefined") CELL_PULSE = !!s.cellPulse;
         return true;
     } catch (e) {

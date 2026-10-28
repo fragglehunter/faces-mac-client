@@ -143,15 +143,17 @@
       slow: (entry.latencyMs || 0) >= slowMs,
       kind: "success", stutter: false,
     };
-    if (status === 0 || (status >= 500 && status !== 599) || status === 429) {
-      out.kind = "fail";
-      out.color = SMOKE_GREY;
-      // Rate-limited (429): stutters into several pops AND shows the 🤯
-      // overwhelmed star, so it's distinguishable from a plain failure.
-      if (status === 429) { out.stutter = true; out.hasEmoji = true; out.emoji = "🤯"; }
-    } else if (status === 504 || status === 599) {
+    var sk = window.__FACES_STATUS__.classify(status);
+    if (sk === "timeout") {
       out.kind = "mortar";
       out.color = SMOKE_GREY;
+    } else if (sk === "ratelimited") {
+      // Rate-limited (429): stutters into several pops AND shows the 🤯
+      // overwhelmed star, so it's distinguishable from a plain failure.
+      out.kind = "fail"; out.color = SMOKE_GREY;
+      out.stutter = true; out.hasEmoji = true; out.emoji = window.__FACES_STATUS__.OVERWHELMED_EMOJI;
+    } else if (sk !== "ok") {
+      out.kind = "fail"; out.color = SMOKE_GREY;
     } else if (status === 200 && body) {
       if (validHex(body.color)) { out.hasColor = true; out.color = body.color; }
       var em = decodeEmoji(body.smiley);
@@ -832,8 +834,8 @@
       '<p class="fwk-intro">Every request is a firework. The <b>color</b> is the burst; the <b>emoji</b> is the star at its heart.</p>',
       row("\u{1F386}", "Glorious bloom", "Success (HTTP 200, fast) — full burst in the request color, emoji glowing at center."),
       row("\u{1F422}", "Slow climb", "High latency (≥ slow threshold) — the shell struggles up, then a late, smaller burst."),
-      row("\u{1F4A8}", "Smoky dud", "Failure (HTTP 5xx / 429) — a grey colorless fizzle, no emoji star."),
-      row("\u{1F30A}", "Splashdown", "Timeout (HTTP 504 / 599) — the shell never clears the skyline and falls into the harbor."),
+      row("\u{1F4A8}", "Smoky dud", "Failure (HTTP 5xx / 599 latched) — a grey colorless fizzle, no emoji star. Rate-limited (429) stutters into several pops with a \u{1F92F} star."),
+      row("\u{1F30A}", "Splashdown", "Timeout (HTTP 504 / no response) — the shell never clears the skyline and falls into the harbor."),
       rowStar("!", "Warning bloom", "Partial — a real color burst, but the emoji wears a yellow ! ring and some petals fizzle."),
       rowStar("\u{1F5B1}", "Launch one", "★ Click anywhere to fire your own (emoji-free) shell. 10 live successes in 8s sets off the GRAND FINALE!"),
       rowStar("\u{1F315}", "Zap the moon", "★ Click the moon — a UFO descends, demolishes the city, then it rebuilds."),

@@ -84,15 +84,18 @@
         if (which === "edge") d.edgeSuccess++;
         else d.centerSuccess++;
       }
-    } else if (st === 599) {
-      d.latched++;
-      d.errors++;
-    } else if (st === 429) {
-      d.ratelimited++;   // rate-limited / overwhelmed — tracked separately from timeouts
-    } else if (st === 504 || st === 0) {
-      d.timeouts++;
-    } else if (st >= 500) {
-      d.errors++;
+    } else {
+      var sk = window.__FACES_STATUS__.classify(st);
+      if (sk === "latched") {
+        d.latched++;
+        d.errors++;
+      } else if (sk === "ratelimited") {
+        d.ratelimited++;   // rate-limited / overwhelmed — tracked separately from timeouts
+      } else if (sk === "timeout") {
+        d.timeouts++;
+      } else if (st >= 500) {
+        d.errors++;
+      }
     }
     notify();
   }

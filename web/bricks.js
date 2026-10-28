@@ -39,7 +39,7 @@
   //   | {gap:true, born} | brick {body, stud, edge, emoji, tilt, sticker, born, wobbleT}
   var grid = [];
   var falling = [], particles = [], floaters = [], rowFlashes = [], pops = [];
-  var placedCount = 0, rowsCompleted = 0;
+  var rowsCompleted = 0;
   var lastBuilderTime = -100, builderBannerBorn = -10, flagT = 0;
 
   var admitted = [];               // rate-limit sliding window (seconds)
@@ -87,7 +87,8 @@
     return clamp(Number(s.funModeRatePerSec || s.buoyantRatePerSec || maxRps) || 0.5, 0.5, 200);   // 200 = super-mode ceiling
   }
 
-  // ── Classify (shared conventions: 504/599/429/0 → sleepy 😴; other hard fail → 😵) ──
+  // ── Classify (shared status.js kinds: timeout 504/0 → sleepy 😴; rate-limited
+  //    429 → overwhelmed 🤯, also never arrives; other hard fail → 😵 shatters) ──
   function classify(entry) {
     var status = entry.status || 0;
     var body = safeJson(entry.body);
@@ -98,9 +99,12 @@
       latencyMs: entry.latencyMs || 0,
       kind: "success",
     };
-    if (status === 504 || status === 599 || status === 429 || status === 0) {
-      out.kind = "sleepy"; out.color = SLEEPY_GREY; out.emoji = "\u{1F634}";           // 😴 never arrives
-    } else if (status >= 500) {
+    var sk = window.__FACES_STATUS__.classify(status);
+    if (sk === "timeout") {
+      out.kind = "sleepy"; out.color = SLEEPY_GREY; out.emoji = window.__FACES_STATUS__.SLEEPY_EMOJI;       // 😴 never arrives
+    } else if (sk === "ratelimited") {
+      out.kind = "sleepy"; out.color = SLEEPY_GREY; out.emoji = window.__FACES_STATUS__.OVERWHELMED_EMOJI;  // 🤯 turned away
+    } else if (sk !== "ok") {
       out.kind = "fail"; out.color = FAIL_GREY; out.emoji = "\u{1F635}";               // 😵 shatters
     } else if (status === 200 && body) {
       if (validHex(body.color)) out.color = body.color;
@@ -131,14 +135,24 @@
     for (var d = 0; d < 14; d++) dust(wallLeft + rand(0, cols * bw), plateTop - rand(0, 6), 1);
   }
 
-  function findTarget() {
+  function liveBrickCount() {
+    var n = 0;
+    for (var r = 0; r < maxRows; r++) for (var c = 0; c < cols; c++) if (isBrick(grid[r][c])) n++;
+    return n;
+  }
+
+  // repair=true for bricks that will land (success/slow/partial); failures
+  // never take an existing gap — they punch a NEW hole in a fresh slot.
+  function findTarget(repair) {
     // 1. Repair the OLDEST gap first (recovery visibly heals the wall).
-    var best = null;
-    for (var r = 0; r < maxRows; r++) for (var c = 0; c < cols; c++) {
-      var cell = grid[r][c];
-      if (cell && cell.gap && (!best || cell.born < best.born)) best = { r: r, c: c, born: cell.born };
+    if (repair) {
+      var best = null;
+      for (var r = 0; r < maxRows; r++) for (var c = 0; c < cols; c++) {
+        var cell = grid[r][c];
+        if (cell && cell.gap && (!best || cell.born < best.born)) best = { r: r, c: c, born: cell.born };
+      }
+      if (best) return { r: best.r, c: best.c };
     }
-    if (best) return { r: best.r, c: best.c };
     // 2. Otherwise the lowest incomplete row, random free slot.
     for (var r2 = 0; r2 < maxRows; r2++) {
       var free = [];
@@ -164,7 +178,7 @@
   }
 
   function spawnBrick(c) {
-    var t = findTarget();
+    var t = findTarget(c.kind !== "fail" && c.kind !== "sleepy");
     grid[t.r][t.c] = { reserved: true };
     var pal = brickColors(c.color);
     var dur;
@@ -220,7 +234,6 @@
       sticker: f.kind === "partial",
       wobbleT: f.kind === "partial" ? 0.7 : 0.28,
     };
-    placedCount++;
     dust(slotX(f.col) + bw / 2, slotYTop(f.row) + bh, 5);
     checkRow(f.row);
   }
@@ -259,25 +272,37 @@
     var rr = r;
     while (rr < maxRows - 1 && isBrick(grid[rr + 1][c])) { grid[rr][c] = grid[rr + 1][c]; rr++; }
     grid[rr][c] = null;
-    placedCount = Math.max(0, placedCount - 1);
     dust(slotX(c) + bw / 2, slotYTop(r) + bh, 6);
     floaters.push({ x: mx, y: my - 16, vy: 40, text: "+1", life: 0, max: 0.8 });
     if (window.__FACES_STATS__) window.__FACES_STATS__.bumpInteraction();
   }
 
   // ── Lifecycle ─────────────────────────────────────────────────────
-  function start() { if (running) return; resize(); running = true; lastTs = performance.now() / 1000; raf = requestAnimationFrame(frame); }
+  function start() {
+    if (running) return;
+    running = true;
+    // Rebuild geometry now that the root is visible (resize() ignores the
+    // 0x0 observations made while it was display:none).
+    resize();
+    if (grid.length !== maxRows) initGrid();
+    lastTs = performance.now() / 1000;
+    raf = requestAnimationFrame(frame);
+  }
   function stop() {
     running = false;
     if (raf) cancelAnimationFrame(raf);
     raf = 0;
     // FX are transient; the WALL persists across mode switches (bus clear resets it).
     falling.length = particles.length = floaters.length = rowFlashes.length = pops.length = 0;
+    // In-flight bricks reserved their slot; free them or they block the wall forever.
+    for (var r = 0; r < grid.length; r++)
+      for (var c = 0; c < grid[r].length; c++)
+        if (grid[r][c] && grid[r][c].reserved) grid[r][c] = null;
   }
   function clearWall() {
     initGrid();
     falling.length = particles.length = floaters.length = rowFlashes.length = pops.length = 0;
-    placedCount = 0; rowsCompleted = 0; flagT = 0; builderBannerBorn = -10;
+    rowsCompleted = 0; flagT = 0; builderBannerBorn = -10;
   }
 
   function frame(nowMs) {
@@ -285,8 +310,10 @@
     var now = nowMs / 1000;
     var dt = Math.min(0.05, now - lastTs || 0.016);
     lastTs = now;
-    update(dt, now);
-    draw(now);
+    if (bgCanvas) {          // no backdrop yet = never had a visible size
+      update(dt, now);
+      draw(now);
+    }
     raf = requestAnimationFrame(frame);
   }
 
@@ -345,7 +372,7 @@
     }
     if (flagT > 0 && flagT < 1) flagT = clamp01(flagT + dt / 0.9);
 
-    if (window.__FACES_STATS__) window.__FACES_STATS__.setActive(placedCount, "bricks");
+    if (window.__FACES_STATS__) window.__FACES_STATS__.setActive(liveBrickCount(), "bricks");
   }
 
   // ── Draw ──────────────────────────────────────────────────────────
@@ -620,8 +647,11 @@
     for (var r = 0; r < maxRows; r++) grid.push(new Array(cols).fill(null));
   }
   function resize() {
-    if (!canvas || !root) return;
+    // Hidden (display:none → 0x0) or inactive: ignore. Falling back to the
+    // minimum size here would shrink the wall to 5 columns and drop bricks.
+    if (!canvas || !root || !running) return;
     var rect = root.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) return;
     dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
     W = Math.max(360, Math.floor(rect.width));
     H = Math.max(320, Math.floor(rect.height));
@@ -695,7 +725,7 @@
       row("\u{1F9F1}", "Clean snap", "Success (HTTP 200, fast) — the brick drops in briskly and clicks into the wall."),
       row("\u{1F3D7}️", "Crane lift", "Slow (≥ slow threshold) — lowered on a swaying crane cable; the slower the response, the longer the lower."),
       row("\u{1F4A5}", "Shatter → gap", "Failure (HTTP 5xx) — the brick cracks mid-air and leaves a HOLE in the wall."),
-      row("\u{1F634}", "Never arrives", "Timeout / rate-limit (504 / 429) — a sleepy brick dissolves before landing; the gap remains."),
+      row("\u{1F634}", "Never arrives", "Timeout (504) shows \u{1F634}, rate-limit (429) shows \u{1F92F} — the brick dissolves before landing; the gap remains."),
       rowStar("!", "Crooked sticker", "Partial — lands tilted with an amber ! sticker; a sub-service failed."),
       rowStar("\u{1F527}", "Repairs", "★ The next success fills the OLDEST gap first — watch recovery rebuild the wall."),
       rowStar("\u{1F5B1}️", "Pop a brick", "★ Click a placed brick to pop it out (+1); the column settles down. Every " + ROWS_PER_BUILDER + " completed rows = MASTER BUILDER!"),

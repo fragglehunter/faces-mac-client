@@ -148,12 +148,12 @@
       var e  = slice[j];
       var tr = document.createElement("tr");
       tr.dataset.id = e.id;
-      var isOk = e.status >= 200 && e.status < 300;
+      var tone = window.__FACES_STATUS__.tone(e.status);
       tr.innerHTML =
         "<td>" + e.id + "</td>" +
         "<td>" + (e.row != null ? e.row + "," + e.col : "–") + "</td>" +
         "<td>" + esc(e.which || "") + "</td>" +
-        '<td class="' + (isOk ? "ok" : "bad") + '">' + e.status + "</td>" +
+        '<td class="' + tone + '">' + e.status + "</td>" +
         "<td>" + (e.latencyMs || 0) + "</td>" +
         "<td>" + esc(e.pod || "") + "</td>";
       frag.appendChild(tr);
@@ -204,11 +204,11 @@
 
   function buildDebugWindowHTML(list) {
     var rows = list.slice(-300).reverse().map(function (e) {
-      var isOk = e.status >= 200 && e.status < 300;
+      var tone = window.__FACES_STATUS__.tone(e.status);
       return '<tr>' +
         '<td>' + e.id + '</td>' +
         '<td>' + esc(e.which || "") + '</td>' +
-        '<td class="' + (isOk ? "ok" : "bad") + '">' + e.status + '</td>' +
+        '<td class="' + tone + '">' + e.status + '</td>' +
         '<td>' + (e.latencyMs || 0) + 'ms</td>' +
         '<td>' + esc(e.pod || "") + '</td>' +
         '</tr>';
@@ -222,7 +222,7 @@
         'table{width:100%;border-collapse:collapse}' +
         'th,td{padding:6px 10px;border-bottom:1px solid #3a3a3c;text-align:left}' +
         'th{background:#2c2c2e;position:sticky;top:0}' +
-        '.ok{color:#30d158}.bad{color:#ff453a}' +
+        '.ok{color:#30d158}.warn{color:#ffd60a}.bad{color:#ff453a}' +
         'div.scroll{overflow:auto;height:calc(100vh - 52px)}' +
       '</style></head><body>' +
       '<h2>Faces Debug Snapshot — ' + list.length + ' requests</h2>' +

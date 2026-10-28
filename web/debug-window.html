@@ -238,6 +238,7 @@ tbody td {
   </div>
 </div>
 
+<script src="status.js"></script>
 <script>
 // debug-window.html — pop-out panel loaded by DebugWindowController (NSPanel).
 // Swift calls window.__refresh__(jsonString) on a 1.5s timer.
@@ -323,9 +324,7 @@ function render() {
   var codeKeys = Object.keys(codeCounts).map(Number).sort(function(a,b){ return a-b; });
   codesEl.innerHTML = '<span class="dw-codes-label">By code:</span>' + (codeKeys.length
     ? codeKeys.map(function(s){
-        var cls = (s >= 200 && s < 300) ? "c-ok"
-                : (s === 429 || s === 599 || (s >= 300 && s < 400)) ? "c-warn"
-                : "c-bad";
+        var cls = "c-" + window.__FACES_STATUS__.tone(s);
         return '<span class="dw-code ' + cls + '"><b>' + (s === 0 ? "ERR" : s) +
                '</b><span class="dw-code-n">' + codeCounts[s] + '</span></span>';
       }).join("")
@@ -337,8 +336,7 @@ function render() {
     var tr = document.createElement("tr");
     if (selected && e.id === selected) tr.className = "sel";
     tr.dataset.id = e.id;
-    var isOk = e.status >= 200 && e.status < 300;
-    var cls  = isOk ? "ok" : (e.status >= 400 || e.status === 0) ? "bad" : "warn";
+    var cls  = window.__FACES_STATUS__.tone(e.status);
     var ts   = e.ts ? new Date(e.ts).toLocaleTimeString() : "";
     tr.innerHTML =
       "<td>" + e.id + "</td>" +

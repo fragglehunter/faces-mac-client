@@ -135,6 +135,10 @@
       this.buckets = new Array(this.n).fill(0);
       this.firstBucket = 0;
     }
+    dispose() {
+      clearInterval(this._timer);
+      this._timer = null;
+    }
   }
 
   // Go's rand.Intn(100) -> [0,99]
@@ -168,7 +172,10 @@
       if (typeof c.maxRate === "number") {
         this.maxRate = Math.max(0, c.maxRate);
         if (this.maxRate >= 0.1 && !this.rateCounter) this.rateCounter = new RateCounter(10);
-        else if (this.maxRate < 0.1) this.rateCounter = null;
+        else if (this.maxRate < 0.1 && this.rateCounter) {
+          this.rateCounter.dispose();
+          this.rateCounter = null;
+        }
       }
     }
 
@@ -581,23 +588,6 @@
 
     // Built-in simulator path.
     _sendSimulated() {
-      // Per-cell response cache: fire the last known good response immediately
-      // on each poll so cells never reach CellWatcher's maxSolid (2000 ms) fade
-      // threshold. The real simulation result follows asynchronously and fires
-      // onload again only if the data actually changed, preventing double-paints.
-      const cacheKey = (this._which || "") + "/" + (this._query || "");
-      const cached = window._faceResponseCache && window._faceResponseCache[cacheKey];
-      if (cached) {
-        setTimeout(() => {
-          this.status = cached.status;
-          this.readyState = 4;
-          this.responseText = cached.body;
-          this._responseHeaders = cached.headers;
-          this._fire("readystatechange");
-          this._fire("load");
-        }, 0);
-      }
-
       const result = handleFaceRequest(this._which);
       const body = result.body != null ? JSON.stringify(result.body) : "";
       const headers = {
@@ -607,22 +597,13 @@
       };
 
       const finish = () => {
-        // Persist so the next poll can fire it immediately.
-        if (!window._faceResponseCache) window._faceResponseCache = {};
-        window._faceResponseCache[cacheKey] = { status: result.statusCode, body, headers };
-
         this._recordDebug(result.statusCode, body, result.pod, null);
-
-        // Only fire load for the real response if it differs from the cache hit
-        // we already sent above — avoids a redundant identical paint per poll.
-        if (!cached || cached.status !== result.statusCode || cached.body !== body) {
-          this.status = result.statusCode;
-          this.readyState = 4;
-          this.responseText = body;
-          this._responseHeaders = headers;
-          this._fire("readystatechange");
-          this._fire("load");
-        }
+        this.status = result.statusCode;
+        this.readyState = 4;
+        this.responseText = body;
+        this._responseHeaders = headers;
+        this._fire("readystatechange");
+        this._fire("load");
       };
 
       const delay = Math.max(0, result.delayMs || 0);
@@ -633,21 +614,6 @@
     // like the real gui_provider.go does server-side. Avoids browser CORS and
     // works with plain http, IPs, and host:port.
     _sendRemote() {
-      // Same cache strategy as _sendSimulated: fire cached response immediately
-      // so cells stay solid during real network round-trips.
-      const cacheKey = (this._which || "") + "/" + (this._query || "");
-      const cached = window._faceResponseCache && window._faceResponseCache[cacheKey];
-      if (cached) {
-        setTimeout(() => {
-          this.status = cached.status;
-          this.readyState = 4;
-          this.responseText = cached.body;
-          this._responseHeaders = cached.headers;
-          this._fire("readystatechange");
-          this._fire("load");
-        }, 0);
-      }
-
       const bridge =
         window.webkit &&
         window.webkit.messageHandlers &&
@@ -674,11 +640,6 @@
             "content-type": "application/json",
             "x-faces-pod": res.pod || "",
             "x-faces-podname": res.pod || "",
-          };
-          // Update cache with real response.
-          if (!window._faceResponseCache) window._faceResponseCache = {};
-          window._faceResponseCache[cacheKey] = {
-            status: this.status, body: this.responseText, headers: this._responseHeaders,
           };
           this._recordDebug(this.status, this.responseText, res.pod, null);
           this._fire("readystatechange");

@@ -11,11 +11,8 @@
   // Escaped (not literal) so the file survives being served with a wrong
   // charset -- index.html declares utf-8, but this is cheap insurance.
   const FALLBACK_EMOJI = "\u2753";        // question mark
-  const DIZZY_EMOJI = "\ud83d\ude35";     // dizzy face
-  const SLEEPY_EMOJI = "\ud83d\ude34";    // sleeping face
   const SCARED_EMOJI = "\ud83d\ude31";    // \ud83d\ude31 face screaming in fear (balloon just popped)
   const DEAD_EMOJI = "\ud83d\udc80";      // \ud83d\udc80 skull (basket has hit the ground)
-  const OVERWHELMED_EMOJI = "\ud83e\udd2f"; // exploding head \u2014 rate-limited / overwhelmed (429)
   const MAX_EVENTS = 90;
   const MAX_WEATHER = 12;
 
@@ -273,23 +270,11 @@
     // Refresh the toolbar rate slider's label + position for the new mode.
     if (window.__syncRateControl__) window.__syncRateControl__();
     // Legacy live-switch: if the page loaded with hideKey=true, #key is empty.
-    // Click btnShowKey (which runs new Key(keyPopupBody)) then move content inline.
+    // Build the inline legend directly (Key is faces.js's global class) rather
+    // than moving the popup's nodes, which left the Modern popup blank later.
     if (visualMode === "legacy") {
       var keyEl = document.getElementById("key");
-      if (keyEl && keyEl.children.length === 0) {
-        var btn = document.getElementById("btnShowKey");
-        if (btn && btn.onclick) {
-          btn.click();
-          setTimeout(function () {
-            var popup = document.getElementById("keyPopup");
-            var popupBody = document.getElementById("keyPopupBody");
-            if (popupBody && keyEl) {
-              while (popupBody.firstChild) keyEl.appendChild(popupBody.firstChild);
-            }
-            if (popup) popup.style.display = "none";
-          }, 30);
-        }
-      }
+      if (keyEl && keyEl.children.length === 0 && typeof Key === "function") new Key(keyEl);
     }
   }
 
@@ -361,7 +346,7 @@
     const emoji = normalizeEmoji(parsed && parsed.smiley);
     const hasEmoji = emoji !== FALLBACK_EMOJI;
     const errors = parsed && Array.isArray(parsed.errors) ? parsed.errors : [];
-    const failed = status === 0 || status === 504 || status === 429 || status >= 500 || parseFailed;
+    const failed = window.__FACES_STATUS__.classify(status) !== "ok" || parseFailed;
     const partialError = !failed && errors.length > 0;
     return {
       id: ++seq,
@@ -374,11 +359,9 @@
       hasColor,
       hasEmoji,
       color,
-      // Shared convention: rate-limited/overwhelmed (429) → 🤯; timeout (504/0)
-      // → sleepy 😴; any other hard failure → dizzy 😵.
-      emoji: failed && !hasEmoji
-        ? (status === 429 ? OVERWHELMED_EMOJI : (status === 504 || status === 0 ? SLEEPY_EMOJI : DIZZY_EMOJI))
-        : emoji,
+      // Shared convention (status.js): rate-limited/overwhelmed (429) → 🤯;
+      // timeout (504/0) → sleepy 😴; any other hard failure → dizzy 😵.
+      emoji: failed && !hasEmoji ? window.__FACES_STATUS__.failureEmoji(status) : emoji,
       which: entry.which || "center",
       row: entry.row,
       col: entry.col,
