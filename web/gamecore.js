@@ -67,8 +67,9 @@
       slow: (entry.latencyMs || 0) >= slowMs, color: "#8B9BBF", emoji: "❓",
       hasColor: false, hasEmoji: false, latencyMs: entry.latencyMs || 0,
     };
-    if (status === 0 || (status >= 500 && status !== 599) || status === 429) out.failed = true;
-    else if (status === 504 || status === 599) out.timeout = true;
+    var sk = window.__FACES_STATUS__.classify(status);
+    if (sk === "timeout") out.timeout = true;
+    else if (sk !== "ok") out.failed = true;     // 429 / 599 / other 5xx
     else if (status === 200 && body) {
       if (validHex(body.color)) { out.hasColor = true; out.color = body.color; }
       var em = decodeEmoji(body.smiley);
@@ -137,11 +138,20 @@
   var down = { left: false, right: false, up: false, down: false, dash: false };
   var pressed = { left: false, right: false, up: false, down: false, dash: false };
 
+  // Only fields that actually take typed text keep the keys; a focused button,
+  // checkbox, select or the rate slider must not swallow game input.
+  var TEXT_INPUT_TYPES = { text: 1, search: 1, email: 1, url: 1, tel: 1, password: 1, number: 1 };
   function inTextField() {
     var el = document.activeElement;
     if (!el) return false;
     var t = el.tagName;
-    return t === "INPUT" || t === "TEXTAREA" || el.isContentEditable;
+    if (t === "TEXTAREA" || el.isContentEditable) return true;
+    return t === "INPUT" && TEXT_INPUT_TYPES[(el.type || "text").toLowerCase()] === 1;
+  }
+  function keyAction(e) {
+    var k = e.key;
+    if (typeof k !== "string") return null;
+    return KEYMAP[k.length === 1 ? k.toLowerCase() : k] || null;   // Shift / Caps Lock: "W" → "w"
   }
   function clearKeys() {
     down.left = down.right = down.up = down.down = down.dash = false;
@@ -150,7 +160,8 @@
 
   window.addEventListener("keydown", function (e) {
     if (!owner || inTextField()) return;
-    var act = KEYMAP[e.key];
+    if (e.metaKey || e.ctrlKey || e.altKey) return;   // ⌘R / ⌘W / ⌃… are app shortcuts, not moves
+    var act = keyAction(e);
     if (!act) return;
     e.preventDefault();                 // stop arrow/space page-scroll while a game owns input
     if (e.repeat) return;               // discrete actions ignore auto-repeat
@@ -161,7 +172,7 @@
 
   window.addEventListener("keyup", function (e) {
     if (!owner) return;
-    var act = KEYMAP[e.key];
+    var act = keyAction(e);
     if (!act) return;
     down[act] = false;
     if (handlers && handlers.onUp) handlers.onUp(act);

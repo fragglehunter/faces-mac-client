@@ -255,6 +255,43 @@ h1 {
     background: var(--btn-bg);
 }
 
+/* Mode selector + rate slider — base (Modern) styles. Fun modes and Legacy
+ * override these further down; without a base rule the labels fall back to
+ * the browser's default serif font. */
+.mode-control,
+.rate-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font: 13px -apple-system, BlinkMacSystemFont, sans-serif;
+    font-weight: 500;
+    color: var(--text);
+    white-space: nowrap;
+}
+
+.mode-control select {
+    font: inherit;
+    color: var(--text);
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 6px;
+    padding: 2px 4px;
+    cursor: pointer;
+}
+
+.rate-control input[type="range"] {
+    width: 90px;
+    margin: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+
+.rate-control .rate-value {
+    min-width: 40px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
 .roundedButton {
     -webkit-appearance: none;
     appearance: none;
@@ -417,6 +454,10 @@ h1 {
 
 .debug-body td.ok {
     color: #30d158;
+}
+
+.debug-body td.warn {
+    color: #ffd60a;
 }
 
 .debug-body td.bad {
@@ -668,9 +709,45 @@ body.visual-fun .user-pill:hover {
  * The original faces-gui had NO wrapper card — content sat directly in <body>.
  * We dissolve the wrapper to transparent so it acts as if it isn't there.
  * ---- */
-body.visual-legacy {
+body.visual-legacy,
+body.visual-legacy.skin-dark,
+body.visual-legacy.skin-system.is-dark,
+body.visual-legacy.skin-gradient {
     background: #ffffff;
     color: #000000;
+    /* Legacy is always the original white page, so pin the light palette even
+     * when the appearance is Dark (or System while macOS is dark) — otherwise
+     * var(--text) consumers (h1, legend) render near-white on white. Selectors
+     * above match the specificity of the dark-appearance rules. */
+    --app-bg: #ffffff;
+    --card-bg: transparent;
+    --card-border: transparent;
+    --text: #000000;
+    --text-dim: rgba(0, 0, 0, 0.6);
+    --toolbar-bg: transparent;
+    --btn-bg: ButtonFace;
+    --btn-bg-hover: ButtonFace;
+    --btn-text: ButtonText;
+    --btn-border: rgba(0, 0, 0, 0.3);
+    --input-bg: #ffffff;
+    --input-border: rgba(0, 0, 0, 0.3);
+    color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+    body.visual-legacy.skin-system {
+        --app-bg: #ffffff;
+        --card-bg: transparent;
+        --card-border: transparent;
+        --text: #000000;
+        --text-dim: rgba(0, 0, 0, 0.6);
+        --toolbar-bg: transparent;
+        --btn-bg: ButtonFace;
+        --btn-bg-hover: ButtonFace;
+        --btn-text: ButtonText;
+        --btn-border: rgba(0, 0, 0, 0.3);
+        --input-bg: #ffffff;
+        --input-border: rgba(0, 0, 0, 0.3);
+    }
 }
 
 /* Dissolve the wrapper — no card, no border, no background, flush top-left. */

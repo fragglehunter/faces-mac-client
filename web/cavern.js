@@ -33,11 +33,8 @@
 
   // \u-escaped so the file is safe even if served with a wrong charset.
   var FALLBACK_EMOJI = "❓";        // ❓
-  var DIZZY_EMOJI    = "😵";  // 😵
-  var SLEEPY_EMOJI   = "😴";  // 😴
   var SCARED_EMOJI   = "😱";  // 😱 frozen in terror under the falling boulder
   var DEAD_EMOJI     = "💀";  // 💀 flattened
-  var OVERWHELMED_EMOJI = "🤯";  // 🤯 rate-limited / overwhelmed (429)
 
   var MAX_EXPLORERS = 60;
   var FOOT = 9;   // feet are drawn down to +9 in sprite coords
@@ -241,13 +238,13 @@
     var hasColor   = !!(parsed && validColor(parsed.color));
     var rawEmoji   = normalizeEmoji(parsed && parsed.smiley);
     var hasEmoji   = rawEmoji !== FALLBACK_EMOJI;
-    var failed     = status === 0 || status === 504 || status === 429 || status >= 500 || parseFail;
+    var failed     = window.__FACES_STATUS__.classify(status) !== "ok" || parseFail;
     var partial    = !failed && !!(parsed && Array.isArray(parsed.errors) && parsed.errors.length > 0);
     var thresh     = (window.__FACES_SETTINGS__ && Number(window.__FACES_SETTINGS__.slowThresholdMs)) || 300;
     var slow       = Number(entry.latencyMs || 0) >= thresh;
 
     var emoji = failed && !hasEmoji
-      ? (status === 429 ? OVERWHELMED_EMOJI : (status === 504 || status === 0 ? SLEEPY_EMOJI : DIZZY_EMOJI))
+      ? window.__FACES_STATUS__.failureEmoji(status)
       : (hasEmoji ? rawEmoji : FALLBACK_EMOJI);
 
     return {

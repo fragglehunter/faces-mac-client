@@ -178,7 +178,11 @@ final class WebController: NSObject, ObservableObject,
     func pushLiveSettings() {
         let json = config.settingsJSON()
         let js = [
-            "window.__applyFacesChaos__   && window.__applyFacesChaos__(\(json));",
+            // The document-start user script only seeds __FACES_SETTINGS__ on load;
+            // merge every live push so modes that read it lazily (slowThresholdMs,
+            // maxRatePerSec, …) see the new values without a reload.
+            "Object.assign(window.__FACES_SETTINGS__ || (window.__FACES_SETTINGS__ = {}), \(json));",
+            "window.__applyFacesChaos__   &&window.__applyFacesChaos__(\(json));",
             "window.__applyPollSettings__ && window.__applyPollSettings__(\(json));",
             "window.__applyToolbarPrefs__ && window.__applyToolbarPrefs__(\(json));",
             "window.__setEmojiTheme__     && window.__setEmojiTheme__('\(safe(config.emojiTheme))');",

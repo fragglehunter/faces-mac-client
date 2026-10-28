@@ -63,7 +63,7 @@
 
   // ── State ────────────────────────────────────────────────────────
   let canvas, ctx, root;
-  let W = 800, H = 600;
+  let W = 800, H = 600, dpr = 1;
   let running  = false;
   let rafId    = null;
   let lastTs   = 0;
@@ -204,11 +204,14 @@
       latencyMs: entry.latencyMs || 0,
     };
 
-    if (status===0 || (status>=500 && status!==599) || status===429) {
-      out.failed = true;
-      if (status===429) { out.hasEmoji = true; out.emoji = "🤯"; }  // overwhelmed / rate-limited
-    } else if (status===504 || status===599) {
+    const sk = window.__FACES_STATUS__.classify(status);
+    if (sk === "timeout") {
       out.timeout = true;
+    } else if (sk === "ratelimited") {
+      out.failed = true;
+      out.hasEmoji = true; out.emoji = window.__FACES_STATUS__.OVERWHELMED_EMOJI;  // overwhelmed / rate-limited
+    } else if (sk !== "ok") {
+      out.failed = true;
     } else if (status===200 && body) {
       if (validHex(body.color)) { out.hasColor = true; out.color = body.color; }
       const em = decodeEmoji(body.smiley);
@@ -578,6 +581,7 @@
   }
 
   function draw() {
+    ctx.setTransform(dpr,0,0,dpr,0,0);   // all drawing is in CSS px
     ctx.clearRect(0,0,W,H);
 
     // Background
@@ -873,32 +877,23 @@
   }
 
   // ── Click interaction ─────────────────────────────────────────────
-  function reachableCount(startIdx, maxDepth) {
-    const visited = new Set();
-    function dfs(ni, d) {
-      if (d>maxDepth || visited.has(ni)) return;
-      visited.add(ni);
-      OUT[NODES[ni].id].forEach(function(toId) {
-        const ti = NI[toId];
-        if (ti!==undefined) dfs(ti, d+1);
-      });
-    }
-    dfs(startIdx, 0);
-    return visited.size;
-  }
-
-  function fireCascadeAnim(startIdx, depth) {
+  // `visited` is shared by the whole cascade so a node reachable along several
+  // paths lights (and spawns its own fan-out) only once.
+  function fireCascadeAnim(startIdx, depth, visited) {
     if (depth > 4) return;
+    visited = visited || new Set();
+    if (visited.has(startIdx)) return;
+    visited.add(startIdx);
     const {x:x1, y:y1} = npos(startIdx);
     NS[startIdx].bloomT = 0.65;
     OUT[NODES[startIdx].id].forEach(function(toId) {
       const ti = NI[toId];
-      if (ti===undefined) return;
+      if (ti===undefined || visited.has(ti)) return;
       const {x:x2, y:y2} = npos(ti);
       setTimeout(function() {
-        if (!running) return;
+        if (!running || visited.has(ti)) return;
         cascades.push({ x1,y1, x2,y2, t:0, to:toId, fired:false });
-        fireCascadeAnim(ti, depth+1);
+        fireCascadeAnim(ti, depth+1, visited);
       }, depth * 150);
     });
   }
@@ -918,20 +913,17 @@
     });
 
     if (bestI >= 0) {
-      const score = reachableCount(bestI, 4);
       fireCascadeAnim(bestI, 0);
-      pulseTotal += score;
-      floaters.push({ x: mx, y: my-20, text: "+"+score, alpha:1.0, vy:32 });
-      bumpPulsePill(score);
+      pulseTotal += 1;
+      floaters.push({ x: mx, y: my-20, text: "+1", alpha:1.0, vy:32 });
+      bumpPulsePill();
     }
   }
 
-  // Score lives in the shared bottom-right stats HUD (.fhs-score); a click can
-  // light multiple nodes, so each lit node counts toward the score.
-  function bumpPulsePill(score) {
-    if (window.__FACES_STATS__) {
-      for (var i = 0; i < Math.max(1, score | 0); i++) window.__FACES_STATS__.bumpInteraction();
-    }
+  // Score lives in the shared bottom-right stats HUD (.fhs-score): one point
+  // per pulse cast, like a click in every other mode.
+  function bumpPulsePill() {
+    if (window.__FACES_STATS__) window.__FACES_STATS__.bumpInteraction();
   }
 
   // ── Resize ────────────────────────────────────────────────────────
@@ -939,8 +931,9 @@
     if (!canvas||!root) return;
     W = root.clientWidth  || window.innerWidth;
     H = root.clientHeight || window.innerHeight;
-    canvas.width  = W;
-    canvas.height = H;
+    dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    canvas.width  = Math.floor(W * dpr);
+    canvas.height = Math.floor(H * dpr);
     recomputeCPs();
   }
 
@@ -948,6 +941,13 @@
   function subscribeDebug() {
     if (!window.__FACES_DEBUG__) { setTimeout(subscribeDebug, 60); return; }
     window.__FACES_DEBUG__.subscribe(function(entry) {
+      if (!entry) {                       // bus cleared → reset the scene + health signal
+        signals.length = sparks.length = arcList.length = cascades.length = 0;
+        pulseRings.length = floaters.length = blooms.length = ripples.length = 0;
+        txMarkers.length = arrivals.length = admitted.length = 0;
+        rollBuckets.fill(0); rollReqs = rollErrs = 0; netStress = 0;
+        return;
+      }
       if (visualMode !== "claude") return;
       spawnFromRequest(entry);
       // NB: stats.js auto-subscribes to the debug bus itself, so the scene must
@@ -977,7 +977,7 @@
       '<tr><td>⚡</td><td><b>Interference arc</b></td><td>Network stress ≥ 30% errors</td></tr>',
       '<tr><td>\u{1F534}</td><td><b>Nodes vibrating red</b></td><td>Critical ≥ 60% errors — network oscillates</td></tr>',
       '<tr><td>❓</td><td><b>Grey signal / ❓ emoji</b></td><td>Color or emoji service down</td></tr>',
-      '<tr class="bk-star"><td>\u{1F9E0}</td><td><b>Cast a pulse</b></td><td>★ Click a node to cascade; score = nodes lit (max 14)</td></tr>',
+      '<tr class="bk-star"><td>\u{1F9E0}</td><td><b>Cast a pulse</b></td><td>★ Click a node to cascade the pulse downstream; +1 per pulse</td></tr>',
       '</tbody></table></div>',
     ].join("");
     document.body.appendChild(keyOverlay);

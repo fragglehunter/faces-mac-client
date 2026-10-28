@@ -17,10 +17,7 @@
 
   // \u-escaped: safe regardless of charset (see BUOYANT-MODE §10)
   var FALLBACK_EMOJI  = "❓";        // ❓
-  var DIZZY_EMOJI     = "😵";  // 😵
-  var SLEEPY_EMOJI    = "😴";  // 😴
   var DEAD_EMOJI      = "💀";  // 💀 pilot is done for once the rocket is shot down
-  var OVERWHELMED_EMOJI = "🤯";  // 🤯 rate-limited / overwhelmed (429)
   var FALLBACK_COLOR  = "#8b8fa8";       // silver-grey for missing color
 
   var MAX_ROCKETS    = 80;
@@ -212,15 +209,16 @@
     var hasColor  = !!(parsed && validColor(parsed.color));
     var rawEmoji  = normalizeEmoji(parsed && parsed.smiley);
     var hasEmoji  = rawEmoji !== FALLBACK_EMOJI;
-    var failed    = status === 0 || status === 504 || status === 429 || status >= 500 || parseFail;
+    var sk        = window.__FACES_STATUS__.classify(status);
+    var failed    = sk !== "ok" || parseFail;
     var partial   = !failed && !!(parsed && Array.isArray(parsed.errors) && parsed.errors.length > 0);
     var thresh    = Number((window.__FACES_SETTINGS__ || {}).slowThresholdMs) || 300;
     var slow      = Number(entry.latencyMs || 0) >= thresh;
-    var timeout   = (status === 429 || status === 504 || status === 0);
+    var timeout   = (sk === "ratelimited" || sk === "timeout");
 
     var emoji;
     if (failed && !hasEmoji) {
-      emoji = status === 429 ? OVERWHELMED_EMOJI : (timeout ? SLEEPY_EMOJI : DIZZY_EMOJI);
+      emoji = window.__FACES_STATUS__.failureEmoji(status);
     } else {
       emoji = hasEmoji ? rawEmoji : FALLBACK_EMOJI;
     }

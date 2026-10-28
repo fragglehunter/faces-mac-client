@@ -47,7 +47,7 @@
   <link rel="stylesheet" href="bricks.css?v=51">
   <!-- skin.css restyles the chrome (card/toolbar/buttons) to feel macOS-native
        and defines the selectable appearances; loaded last so it can override. -->
-  <link rel="stylesheet" href="skin.css?v=29">
+  <link rel="stylesheet" href="skin.css?v=30">
   <!-- stats.css — unified HUD pills for all fun modes -->
   <link rel="stylesheet" href="stats.css?v=50">
 </HEAD>
@@ -200,25 +200,27 @@
     "slowThresholdMs": 300
   }
   </script>
-  <script src="sim.js?v=33"></script>
-  <script src="faces.js?v=50"></script>
+  <!-- status.js: shared HTTP-status classifier; must load before everything else -->
+  <script src="status.js?v=1"></script>
+  <script src="sim.js?v=34"></script>
+  <script src="faces.js?v=51"></script>
   <script src="theme.js?v=27"></script>
-  <script src="layout.js?v=28"></script>
+  <script src="layout.js?v=29"></script>
   <!-- stats.js must load before scene scripts so __FACES_STATS__ is defined -->
-  <script src="stats.js?v=50"></script>
+  <script src="stats.js?v=51"></script>
   <!-- gamecore.js: shared engine for the game modes; must load before snake/derby -->
-  <script src="gamecore.js?v=35"></script>
-  <script src="buoyant.js?v=50"></script>
-  <script src="cavern.js?v=50"></script>
-  <script src="space.js?v=50"></script>
-  <script src="garden.js?v=50"></script>
-  <script src="claude.js?v=50"></script>
-  <script src="fireworks.js?v=50"></script>
+  <script src="gamecore.js?v=36"></script>
+  <script src="buoyant.js?v=51"></script>
+  <script src="cavern.js?v=51"></script>
+  <script src="space.js?v=51"></script>
+  <script src="garden.js?v=51"></script>
+  <script src="claude.js?v=51"></script>
+  <script src="fireworks.js?v=51"></script>
   <script src="snake.js?v=42"></script>
   <script src="derby.js?v=41"></script>
-  <script src="bricks.js?v=56"></script>
+  <script src="bricks.js?v=57"></script>
   <script src="toolbar.js?v=34"></script>
-  <script src="debug.js?v=27"></script>
+  <script src="debug.js?v=28"></script>
 </BODY>
 
 </HTML>

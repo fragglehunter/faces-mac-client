@@ -56,19 +56,36 @@
     );
   }
 
+  // Coalesce: many mutations / resizes in one frame → one layout pass.
+  let scheduled = false;
   function schedule() {
-    requestAnimationFrame(setScale);
+    if (scheduled) return;
+    scheduled = true;
+    requestAnimationFrame(function () {
+      scheduled = false;
+      setScale();
+    });
   }
 
   window.__updateFacesLayout__ = schedule;
   window.addEventListener("resize", schedule);
   window.addEventListener("load", schedule);
 
-  new MutationObserver(schedule).observe(document.body, {
-    attributes: true,
-    childList: true,
-    subtree: true,
-    attributeFilter: ["style", "class"],
+  // Only watch what setScale() actually reads: the body's mode classes and the
+  // pods/legend columns' visibility + content. Observing the whole subtree
+  // fired on nearly every frame (cell repaints restyle constantly).
+  const observer = new MutationObserver(schedule);
+  observer.observe(document.body, { attributes: true, attributeFilter: ["class", "style"] });
+  ["column2", "column3"].forEach(function (id) {
+    const el = document.getElementById(id);
+    if (el) {
+      observer.observe(el, {
+        attributes: true,
+        attributeFilter: ["style", "class"],
+        childList: true,
+        subtree: id === "column3",   // the legend's width depends on its content
+      });
+    }
   });
 
   schedule();
