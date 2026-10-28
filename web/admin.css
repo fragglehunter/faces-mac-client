@@ -147,6 +147,9 @@ body {
 .poll-dot.ok    { color: var(--green); }
 .poll-dot.err   { color: var(--red); }
 .poll-dot.idle  { color: var(--text-dim); }
+/* Whole main poll failing: keep showing the last data, visibly stale. */
+.admin-stale .health-chips,
+.admin-stale .page:not(#page-settings):not(#page-debug) { opacity: 0.55; transition: opacity .3s; }
 
 .health-chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .health-chip {
@@ -596,6 +599,12 @@ body {
 .fi-card-pods .pod-pill { padding: 3px 9px; }
 .fi-card-actions { display: flex; gap: 7px; }
 .fi-btn { padding: 5px 11px; font-size: 11px; }
+.fi-card-edited {
+  margin-left: 8px; padding: 1px 6px; border-radius: 999px;
+  font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--yellow); border: 1px solid currentColor; opacity: .85;
+}
+.scenario-btn:disabled { opacity: 0.5; cursor: default; }
 
 .scenario-bar { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
 .scenario-label { font-size: 10px; font-weight: 700; color: var(--text-dim); width: 132px; flex: 0 0 132px; }

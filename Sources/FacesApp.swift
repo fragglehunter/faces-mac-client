@@ -17,7 +17,7 @@ struct FacesApp: App {
         let cfg = FacesConfig()
         _config     = StateObject(wrappedValue: cfg)
         _controller = StateObject(wrappedValue: WebController(config: cfg))
-        CrashReporter.install()
+        CrashReporter.setEnabled(cfg.crashReportingEnabled)
     }
 
     var body: some Scene {
@@ -50,6 +50,9 @@ struct FacesApp: App {
                     controller.calm()
                 }
                 .keyboardShortcut("k", modifiers: .command)
+                // Calm only drives the built-in simulator; in Remote mode it would
+                // just zero the (ignored) local chaos knobs.
+                .disabled(config.connectionMode == ConnectionMode.remote.rawValue)
 
                 Divider()
 

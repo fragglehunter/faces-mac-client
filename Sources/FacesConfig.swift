@@ -11,6 +11,18 @@ struct ServiceChaos: Codable, Equatable {
     var maxRate: Double = 0
     var delayMs: Int = 0
 
+    init() {}
+
+    // Tolerate missing keys (older saves / newly added knobs) instead of failing
+    // the whole settings decode.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        errorFraction = try c.decodeIfPresent(Int.self,    forKey: .errorFraction) ?? 0
+        latchFraction = try c.decodeIfPresent(Int.self,    forKey: .latchFraction) ?? 0
+        maxRate       = try c.decodeIfPresent(Double.self, forKey: .maxRate)       ?? 0
+        delayMs       = try c.decodeIfPresent(Int.self,    forKey: .delayMs)       ?? 0
+    }
+
     func asDict() -> [String: Any] {
         ["errorFraction": errorFraction, "latchFraction": latchFraction,
          "maxRate": maxRate, "delayMs": delayMs]
@@ -179,6 +191,9 @@ final class FacesConfig: ObservableObject {
 
     // MARK: - Persistence
 
+    // Every field is optional so the synthesized decoder uses decodeIfPresent:
+    // a save from an older/newer build that lacks (or adds) a key loads what it
+    // can instead of failing outright and silently resetting every setting.
     private struct Persisted: Codable {
         var connectionMode: String?
         var endpoint: String?
@@ -188,16 +203,16 @@ final class FacesConfig: ObservableObject {
         var adminUsername: String?
         var adminPassword: String?
         var adminShowDebugPage: Bool?
-        var numRows: Int
-        var numCols: Int
-        var edgeSize: Int
-        var startActive: Bool
-        var hideKey: Bool
-        var showPods: Bool
+        var numRows: Int?
+        var numCols: Int?
+        var edgeSize: Int?
+        var startActive: Bool?
+        var hideKey: Bool?
+        var showPods: Bool?
         var persistFaces: Bool?
         var cellPulse: Bool?
         var paintIntervalMs: Int?
-        var user: String
+        var user: String?
         var showDebugButton: Bool?
         var showSettingsButton: Bool?
         var emojiTheme: String?
@@ -209,11 +224,11 @@ final class FacesConfig: ObservableObject {
         var buoyantRatePerSec: Int?   // legacy — migrated on load
         var superMode: Bool?
         var crashReportingEnabled: Bool?
-        var defaultSmiley: String
-        var defaultColor: String
-        var face: ServiceChaos
-        var smiley: ServiceChaos
-        var color: ServiceChaos
+        var defaultSmiley: String?
+        var defaultColor: String?
+        var face: ServiceChaos?
+        var smiley: ServiceChaos?
+        var color: ServiceChaos?
     }
 
     func save() {
@@ -260,16 +275,16 @@ final class FacesConfig: ObservableObject {
         adminUsername  = p.adminUsername ?? ""
         adminPassword  = p.adminPassword ?? ""
         adminShowDebugPage = p.adminShowDebugPage ?? false
-        numRows        = p.numRows
-        numCols        = p.numCols
-        edgeSize       = p.edgeSize
-        startActive    = p.startActive
-        hideKey        = p.hideKey
-        showPods       = p.showPods
+        numRows        = p.numRows ?? 4
+        numCols        = p.numCols ?? 4
+        edgeSize       = p.edgeSize ?? 1
+        startActive    = p.startActive ?? true
+        hideKey        = p.hideKey ?? true
+        showPods       = p.showPods ?? false
         persistFaces   = p.persistFaces ?? true
         cellPulse      = p.cellPulse ?? true
         paintIntervalMs = p.paintIntervalMs ?? 2000
-        user           = p.user
+        user           = p.user ?? "unknown"
         showDebugButton    = p.showDebugButton ?? true
         showSettingsButton = p.showSettingsButton ?? true
         emojiTheme     = p.emojiTheme ?? "native"
@@ -283,25 +298,35 @@ final class FacesConfig: ObservableObject {
         if let r = p.funModeRatePerSec { funModeRatePerSec = min(funRateCap, max(0.5, r)) }
         else if let r = p.buoyantRatePerSec { funModeRatePerSec = min(funRateCap, max(0.5, Double(r))) }
         crashReportingEnabled = p.crashReportingEnabled ?? true
-        defaultSmiley  = p.defaultSmiley
-        defaultColor   = p.defaultColor
-        face           = p.face
-        smiley         = p.smiley
-        color          = p.color
+        defaultSmiley  = p.defaultSmiley ?? "Grinning"
+        defaultColor   = p.defaultColor ?? "blue"
+        face           = p.face ?? ServiceChaos()
+        smiley         = p.smiley ?? ServiceChaos()
+        color          = p.color ?? ServiceChaos()
     }
 
-    func normalizedEndpoint() -> String {
-        var e = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
-        if e.isEmpty { return "" }
-        if !e.hasPrefix("http://") && !e.hasPrefix("https://") { e = "http://" + e }
-        while e.hasSuffix("/") { e.removeLast() }
-        return e
-    }
+    func normalizedEndpoint() -> String { Self.normalize(endpoint) }
 
-    func normalizedAdminEndpoint() -> String {
-        var e = adminEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+    func normalizedAdminEndpoint() -> String { Self.normalize(adminEndpoint) }
+
+    /// "host:port", "HTTP://host", "::1", "[fe80::1]:8080/" → a base URL string
+    /// with a lowercase http(s) scheme, bracketed IPv6 literal and no trailing "/".
+    static func normalize(_ raw: String) -> String {
+        var e = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if e.isEmpty { return "" }
-        if !e.hasPrefix("http://") && !e.hasPrefix("https://") { e = "http://" + e }
+        var scheme = "http://"
+        if let s = ["http://", "https://"].first(where: { e.lowercased().hasPrefix($0) }) {
+            scheme = s
+            e.removeFirst(s.count)
+        }
+        // A bare IPv6 literal has 2+ colons in the host; a port can't follow an
+        // unbracketed one, so the whole host is the address.
+        let hostEnd = e.firstIndex(where: { $0 == "/" || $0 == "?" || $0 == "#" }) ?? e.endIndex
+        let host = e[..<hostEnd]
+        if !host.hasPrefix("["), host.filter({ $0 == ":" }).count >= 2 {
+            e = "[" + host + "]" + e[hostEnd...]
+        }
+        e = scheme + e
         while e.hasSuffix("/") { e.removeLast() }
         return e
     }

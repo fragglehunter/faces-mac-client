@@ -1,9 +1,13 @@
 // CrashReporter — writes crash logs to ~/Library/Application Support/Faces/CrashLogs/
 //
-// Catches NSException (Swift fatalError, ObjC exceptions). Signal-based crashes
-// (EXC_BAD_ACCESS) are not caught here — for those, macOS already writes a
-// .crash report to ~/Library/Logs/DiagnosticReports/. Users can find those via
-// Console.app or by opening the Settings > Debug > "Show Crash Logs" folder.
+// Records uncaught Objective-C exceptions (NSException) only. Swift runtime
+// traps — fatalError, force-unwrapping nil, array index out of range — and
+// signal crashes (EXC_BAD_ACCESS) are NOT exceptions and never reach this
+// handler; macOS writes those to ~/Library/Logs/DiagnosticReports/ (see
+// Console.app). Note too that AppKit catches and logs most exceptions raised
+// during event handling itself, so only ones that escape it land here.
+//
+// Gated by Settings › Advanced › Crash reporting (FacesConfig.crashReportingEnabled).
 //
 // SPDX-License-Identifier: Apache-2.0
 
@@ -18,9 +22,14 @@ enum CrashReporter {
             .appendingPathComponent("Faces/CrashLogs")
     }
 
-    static func install() {
-        NSSetUncaughtExceptionHandler { exception in
-            CrashReporter.write(exception: exception)
+    /// Install or remove the uncaught-exception handler to match the setting.
+    static func setEnabled(_ on: Bool) {
+        if on {
+            NSSetUncaughtExceptionHandler { exception in
+                CrashReporter.write(exception: exception)
+            }
+        } else {
+            NSSetUncaughtExceptionHandler(nil)
         }
     }
 

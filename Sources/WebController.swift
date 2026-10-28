@@ -23,6 +23,23 @@ final class WebController: NSObject, ObservableObject,
     private var adminWindowController: AdminWindowController?
     private var dragMonitor: Any?
 
+    // Remote face traffic gets its own session: URLSession.shared caps at ~6
+    // connections per host, which serialises fun modes running 20–200 req/s
+    // (each request then queues behind slow ones and times out).
+    private lazy var proxySession: URLSession = {
+        let cfg = URLSessionConfiguration.default
+        cfg.httpMaximumConnectionsPerHost = 64
+        cfg.requestCachePolicy = .reloadIgnoringLocalCacheData
+        cfg.urlCache = nil
+        cfg.timeoutIntervalForRequest = 10
+        return URLSession(configuration: cfg)
+    }()
+
+    // Status coalescing for proxied requests (main-queue only). See setStatus.
+    private var pendingStatus: (text: String, kind: String, code: Int, ms: Int, url: String)?
+    private var statusFlushScheduled = false
+    private static let statusThrottle: TimeInterval = 0.25
+
     init(config: FacesConfig) {
         self.config = config
 
@@ -280,7 +297,7 @@ final class WebController: NSObject, ObservableObject,
         req.setValue("no-cache, no-store, max-age=0", forHTTPHeaderField: "Cache-Control")
         req.setValue(config.user, forHTTPHeaderField: "X-Faces-User")
         let started = Date()
-        URLSession.shared.dataTask(with: req) { [weak self] data, resp, err in
+        proxySession.dataTask(with: req) { [weak self] data, resp, err in
             let ms = Int(Date().timeIntervalSince(started) * 1000)
             if let err = err {
                 self?.setStatus("Failed: \(err.localizedDescription)", kind: "error", code: 0, ms: ms, url: url.absoluteString)
@@ -297,14 +314,37 @@ final class WebController: NSObject, ObservableObject,
         }.resume()
     }
 
-    private func setStatus(_ text: String, kind: String, code: Int, ms: Int, url: String) {
+    /// Update the connection pill. `throttled` is for the per-request proxy path:
+    /// those updates are coalesced to at most one every 250 ms (latest wins), so a
+    /// 200 req/s fun mode doesn't re-render Settings on every response. Explicit
+    /// updates (Test, reload) apply at once and drop any pending proxy update.
+    private func setStatus(_ text: String, kind: String, code: Int, ms: Int, url: String,
+                           throttled: Bool = false) {
         DispatchQueue.main.async {
-            self.connectionStatus     = text
-            self.connectionStatusKind = kind
-            self.lastRemoteStatusCode = code
-            self.lastRemoteLatencyMs  = ms
-            self.lastRemoteURL        = url
+            if !throttled {
+                self.pendingStatus = nil
+                self.applyStatus(text, kind: kind, code: code, ms: ms, url: url)
+                return
+            }
+            self.pendingStatus = (text, kind, code, ms, url)
+            guard !self.statusFlushScheduled else { return }
+            self.statusFlushScheduled = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.statusThrottle) {
+                self.statusFlushScheduled = false
+                guard let s = self.pendingStatus else { return }
+                self.pendingStatus = nil
+                self.applyStatus(s.text, kind: s.kind, code: s.code, ms: s.ms, url: s.url)
+            }
         }
+    }
+
+    // Assign only what changed: every @Published write fires objectWillChange.
+    private func applyStatus(_ text: String, kind: String, code: Int, ms: Int, url: String) {
+        if connectionStatus     != text { connectionStatus     = text }
+        if connectionStatusKind != kind { connectionStatusKind = kind }
+        if lastRemoteStatusCode != code { lastRemoteStatusCode = code }
+        if lastRemoteLatencyMs  != ms   { lastRemoteLatencyMs  = ms }
+        if lastRemoteURL        != url  { lastRemoteURL        = url }
     }
 
     // MARK: - WKNavigationDelegate
@@ -422,7 +462,7 @@ final class WebController: NSObject, ObservableObject,
         headers.forEach { req.setValue($1, forHTTPHeaderField: $0) }
 
         let started = Date()
-        URLSession.shared.dataTask(with: req) { [weak self] data, resp, err in
+        proxySession.dataTask(with: req) { [weak self] data, resp, err in
             let ms      = Int(Date().timeIntervalSince(started) * 1000)
             let http    = resp as? HTTPURLResponse
             let status  = http?.statusCode ?? 0
@@ -430,13 +470,13 @@ final class WebController: NSObject, ObservableObject,
             let pod     = http?.value(forHTTPHeaderField: "X-Faces-Pod") ?? ""
             if let err = err {
                 self?.setStatus("Connection failed: \(err.localizedDescription)",
-                                kind: "error", code: 0, ms: ms, url: url.absoluteString)
+                                kind: "error", code: 0, ms: ms, url: url.absoluteString, throttled: true)
                 reply(["error": err.localizedDescription]); return
             }
             if (200...299).contains(status) {
-                self?.setStatus("Connected", kind: "ok", code: status, ms: ms, url: url.absoluteString)
+                self?.setStatus("Connected", kind: "ok", code: status, ms: ms, url: url.absoluteString, throttled: true)
             } else {
-                self?.setStatus("HTTP \(status)", kind: "warning", code: status, ms: ms, url: url.absoluteString)
+                self?.setStatus("HTTP \(status)", kind: "warning", code: status, ms: ms, url: url.absoluteString, throttled: true)
             }
             reply(["status": status, "body": bodyStr, "pod": pod])
         }.resume()
@@ -463,6 +503,9 @@ final class DebugWindowController: NSObject, WKNavigationDelegate, WKScriptMessa
     private let webDirURL: URL?
     private var refreshTimer: Timer?
     private weak var mainWebView: WKWebView?
+    /// Latest snapshot handed to show(); re-pushed in didFinish because the
+    /// panel page's __refresh__ doesn't exist until debug-window.html has loaded.
+    private var lastSnapshotJSON: String?
 
     init(webDirURL: URL?) {
         self.webDirURL = webDirURL
@@ -489,20 +532,37 @@ final class DebugWindowController: NSObject, WKNavigationDelegate, WKScriptMessa
             cfg.userContentController.add(self, name: "clearDebug")
             cfg.userContentController.add(self, name: "refreshDebug")
             cfg.userContentController.add(self, name: "setDebugRate")
-            if let dir = webDirURL {
-                cfg.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
-                let wv = WKWebView(frame: .zero, configuration: cfg)
-                wv.navigationDelegate = self
-                debugWebView = wv
-                if let indexURL = dir.appendingPathComponent("debug-window.html") as URL?,
-                   FileManager.default.fileExists(atPath: indexURL.path) {
-                    wv.loadFileURL(indexURL, allowingReadAccessTo: dir)
-                }
+            cfg.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
+            let wv = WKWebView(frame: .zero, configuration: cfg)
+            wv.navigationDelegate = self
+            debugWebView = wv
+            if let dir = webDirURL,
+               case let indexURL = dir.appendingPathComponent("debug-window.html"),
+               FileManager.default.fileExists(atPath: indexURL.path) {
+                wv.loadFileURL(indexURL, allowingReadAccessTo: dir)
+            } else {
+                // Missing bundle assets used to leave debugWebView nil → crash below.
+                wv.loadHTMLString("""
+                <html><body style="font-family:-apple-system,sans-serif;padding:2em;">
+                <h2>Could not find bundled debug assets.</h2>
+                <p>Expected <code>web/debug-window.html</code> inside the app bundle Resources.</p>
+                </body></html>
+                """, baseURL: nil)
             }
         }
-        setup(webView: debugWebView!)
-        pushData(json: initialDataJSON)
+        guard let wv = debugWebView else { return }
+        setup(webView: wv)
+        lastSnapshotJSON = initialDataJSON
+        pushData(json: initialDataJSON)   // no-op on first open; didFinish re-pushes
         startRefresh(source: mainWebView)
+    }
+
+    // First open: the snapshot pushed in show() arrives before the page has
+    // defined __refresh__, so push it again once loaded (and pull a fresh one).
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard webView === debugWebView else { return }
+        if let json = lastSnapshotJSON { pushData(json: json) }
+        pullAndPush()
     }
 
     // Panel → Swift bridges.
@@ -572,7 +632,10 @@ final class DebugWindowController: NSObject, WKNavigationDelegate, WKScriptMessa
         guard let src = mainWebView else { return }
         src.evaluateJavaScript(DebugWindowController.snapshotJS) { [weak self] result, _ in
             if let json = result as? String {
-                DispatchQueue.main.async { self?.pushData(json: json) }
+                DispatchQueue.main.async {
+                    self?.lastSnapshotJSON = json
+                    self?.pushData(json: json)
+                }
             }
         }
     }
@@ -600,9 +663,11 @@ final class DebugWindowController: NSObject, WKNavigationDelegate, WKScriptMessa
 final class SettingsWindowController: NSObject {
     private var panel: NSPanel?
 
-    /// Toggle the settings panel open/closed.
+    /// ⌘, / toolbar button: close the panel only when it's already the key
+    /// window; if it's open but behind something (or not focused), bring it
+    /// forward instead of closing it out from under the user.
     func toggle(config: FacesConfig, webController: WebController) {
-        if let p = panel, p.isVisible {
+        if let p = panel, p.isVisible, p.isKeyWindow {
             p.close()
         } else {
             show(config: config, webController: webController)
